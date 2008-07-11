@@ -11,6 +11,9 @@ static void set_nonblock
   assert(0 <= fcntl(fd, F_SETFL, flags | O_NONBLOCK) && "Setting socket non-block failed!");
 }
 
+
+
+/* Internal callback */
 static void on_connection
   ( struct ev_loop *loop
   , ev_io *watcher
@@ -21,7 +24,7 @@ static void on_connection
 
   assert(server->open);
   assert(server->loop == loop);
-  assert(&server->request_watcher == watcher);
+  assert(&server->req_watcher == watcher);
   
   if(EV_ERROR & revents) {
     g_message("on_connection() got error event, closing server.");
@@ -29,13 +32,12 @@ static void on_connection
     return;
   }
 
-
   
-  struct sockaddr_in connection_addr; // connector's address information
-  socklen_t connection_addr_len = sizeof(their_addr); 
+  struct sockaddr_in addr; // connector's address information
+  socklen_t addr_len = sizeof(their_addr); 
   int fd = accept( server->fd
-                 , (struct sockaddr*) & connection_addr
-                 , & connection_addr_len
+                 , (struct sockaddr*) & addr
+                 , & addr_len
                  );
   if(fd < 0) {
     perror("accept()");
@@ -43,8 +45,7 @@ static void on_connection
   }
 
   
-  ew_connection *connection = 
-    server->new_connection(server, connection_addr);
+  ew_connection *connection = server->connection_handler(server, addr);
   
   if(connection == NULL) {
     close(fd);    
@@ -54,50 +55,35 @@ static void on_connection
   set_nonblock(fd);
   connection->fd = fd;
   connection->open = TRUE;
+  connection->server = server;
   
-  memcpy(&connection->sockaddr, &connection_addr, connection_addr_len);
+  memcpy(&connection->sockaddr, &addr, addr_len);
   
   if(server->port[0] != '\0')
-    client->ip = inet_ntoa(client->sockaddr.sin_addr);  
+    connection->ip = inet_ntoa(addr.sin_addr);  
+
+  connection->write_watcher.data = connection;
+  ev_init (&connection->write_watcher, on_writable);
+  ev_io_set (&connection->write_watcher, connection->fd, EV_WRITE);
+  /* Note: not starting the write watcher until there is data to 
+   * be written
+   */
+
+  connection->req_watcher.data = connection;
+  ev_init(&connection->req_watcher, on_reqable);
+  ev_io_set(&connection->req_watcher, connection->fd, EV_READ | EV_ERROR);
+  ev_io_start(server->loop, &connection->req_watcher);
   
-  /* INITIALIZE http_parser */
-  http_parser_init(&client->parser);
-  client->parser.data = client;
-  client->parser.http_field = http_field_cb;
-  client->parser.on_element = on_element;
-  
-  /* OTHER */
-  client->env_size = 0;
-  client->read =  0;
-  if(client->request_buffer == NULL) {
-    /* Only allocate the request_buffer once */
-    client->request_buffer = (char*)malloc(EBB_BUFFERSIZE);
-  }
-  client->keep_alive = FALSE;
-  client->status_written = client->headers_written = client->body_written = FALSE;
-  client->written = 0;
-  
-  if(client->response_buffer != NULL)
-    g_string_free(client->response_buffer, TRUE);
-  client->response_buffer = g_string_new("");
-  
-  /* SETUP READ AND TIMEOUT WATCHERS */
-  client->write_watcher.data = client;
-  ev_init (&client->write_watcher, on_client_writable);
-  ev_io_set (&client->write_watcher, client->fd, EV_WRITE | EV_ERROR);
-  /* Note, do not start write_watcher until there is something to be written.
-   * See ebb_client_write_body() */
-  
-  client->read_watcher.data = client;
-  ev_init(&client->read_watcher, on_client_readable);
-  ev_io_set(&client->read_watcher, client->fd, EV_READ | EV_ERROR);
-  ev_io_start(client->server->loop, &client->read_watcher);
-  
-  client->timeout_watcher.data = client;  
-  ev_timer_init(&client->timeout_watcher, on_timeout, EBB_TIMEOUT, EBB_TIMEOUT);
-  ev_timer_start(client->server->loop, &client->timeout_watcher);
+  connection->timeout_watcher.data = connection;  
+  ev_timer_init(&connection->timeout_watcher, on_timeout, connection->timeout, 0);
+  ev_timer_start(connection->server->loop, &connection->timeout_watcher);
 }
 
+/**
+ * begin the server listening on a file descriptor
+ * @param  server pointer to ew_server
+ * @param  sfd    the descriptor to listen on
+ */
 int ew_server_listen_on_fd
   ( ew_server *server
   , const int sfd 
@@ -173,12 +159,12 @@ error:
 void ew_server_init
   ( ew_server *server
   , struct ev_loop *loop
-  , ew_new_connection_handler handler
+  , ew_connection_handler handler
   , void *data
   )
 {
-  server->new_connection = handler;
-  server->data = request_cb_data;
+  server->connection_handler = handler;
+  server->data = data;
   server->loop = loop;
   server->open = FALSE;
 
