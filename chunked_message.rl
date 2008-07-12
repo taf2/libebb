@@ -80,7 +80,7 @@ static unsigned int hextoi
 
   include http11 "http11.rl";
 
-  trailer         = (message_header CRLF)*;
+  trailer         = message_header*;
 
   nonzero_xdigit = [1-9a-fA-F];
   #chunk_ext_val   = token | quoted_string;
@@ -231,8 +231,8 @@ int main()
   assert(0 == strcmp("hello world", buffer));
 
   // with trailing headers. blech.
-  //test_string("5\r\nhello\r\n6\r\n world\r\n0\r\nContent-Type: text/plain\r\n\r\n"); 
-  //assert(0 == strcmp("hello world", buffer));
+  test_string("5\r\nhello\r\n6\r\n world\r\n0\r\nVary: *\r\nContent-Type: text/plain\r\n\r\n"); 
+  assert(0 == strcmp("hello world", buffer));
 
   test_split("5\r\nhello\r", "\n6\r\n world\r\n0\r\n\r\n"); 
   assert(0 == strcmp("hello world", buffer));
