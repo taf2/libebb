@@ -6,44 +6,6 @@
 # define MIN(a,b) (a < b ? a : b)
 #endif
 
-static unsigned int hextoi
-  ( const char *p
-  , size_t len
-  )
-{
-  unsigned int i, total = 0;
-  int n;
-  for(i = 0; i < len; i++) {
-    switch(p[i]) {
-      case '0': n =  0; break;
-      case '1': n =  1; break;
-      case '2': n =  2; break;
-      case '3': n =  3; break;
-      case '4': n =  4; break;
-      case '5': n =  5; break;
-      case '6': n =  6; break;
-      case '7': n =  7; break;
-      case '8': n =  8; break;
-      case '9': n =  9; break;
-      case 'A':
-      case 'a': n = 10; break;
-      case 'b':
-      case 'B': n = 11; break;
-      case 'c':
-      case 'C': n = 12; break;
-      case 'd':
-      case 'D': n = 13; break;
-      case 'e':
-      case 'E': n = 14; break;
-      case 'f':
-      case 'F': n = 15; break;
-      default: assert(0 && "bad hex char");
-    }
-    total *= 16;
-    total += n;
-  }
-  return total;
-}
 
 #define LEN (p - parser->mark)
 #define REMAINING (pe - p)
@@ -244,10 +206,6 @@ int test_split(const char *buf1, const char *buf2)
 
 int main() 
 {
-  assert(3416 == hextoi("d58", 3));
-  assert(0 == hextoi("0", 1));
-  assert(2748 == hextoi("ABC", 3));
-
   assert(0 < test_string("5\r\nhello\r\n0\r\n\r\n")); 
   assert(0 == strcmp("hello", test_buf));
 
