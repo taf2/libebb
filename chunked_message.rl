@@ -206,10 +206,18 @@ int test_split(const char *buf1, const char *buf2)
 
 int main() 
 {
+  // zero length 
+  assert(0 < test_string("0\r\n\r\n")); 
+  assert(0 == strcmp("", test_buf));
+  assert(0 < test_string("00000\r\n\r\n")); 
+  assert(0 == strcmp("", test_buf));
+
+  // easy - one chunk
   assert(0 < test_string("5\r\nhello\r\n0\r\n\r\n")); 
   assert(0 == strcmp("hello", test_buf));
 
-  assert(0 < test_string("5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n")); 
+  // two chunks ; triple zero ending
+  assert(0 < test_string("5\r\nhello\r\n6\r\n world\r\n000\r\n\r\n")); 
   assert(0 == strcmp("hello world", test_buf));
 
   // with trailing headers. blech.
@@ -220,44 +228,58 @@ int main()
   assert(0 < test_string("5; ihatew3;whatthefuck=aretheseparametersfor\r\nhello\r\n6; blahblah; blah\r\n world\r\n0\r\n\r\n"));
   assert(0 == strcmp("hello world", test_buf));
 
+  // broken between \r and \n between chunks
   assert(0 < test_split("5\r\nhello\r", "\n6\r\n world\r\n0\r\n\r\n")); 
   assert(0 == strcmp("hello world", test_buf));
 
+  // broken at start of chunk
   assert(0 < test_split("5\r\nhello\r\n", "6\r\n world\r\n0\r\n\r\n")); 
   assert(0 == strcmp("hello world", test_buf));
 
+  // broken at end of chunk
   assert(0 < test_split("5\r\nhello", "\r\n6\r\n world\r\n0\r\n\r\n")); 
   assert(0 == strcmp("hello world", test_buf));
 
+  // broken in middle of chunk
   assert(0 < test_split("5\r\nhel", "lo\r\n6\r\n world\r\n0\r\n\r\n")); 
   assert(0 == strcmp("hello world", test_buf));
 
+  // broken in just after the zero
   assert(0 < test_split("5\r\nhello\r\n6\r\n world\r\n0", "\r\n\r\n")); 
   assert(0 == strcmp("hello world", test_buf));
 
+  // broken one char before the end
   assert(0 < test_split("5\r\nhello\r\n6\r\n world\r\n0\r\n\r", "\n")); 
   assert(0 == strcmp("hello world", test_buf));
 
-  // split with trailing headers. blech.
+  // broken in trailing headers
   assert(0 < test_split("5\r\nhello\r\n6\r\n world\r\n0\r\nVary: *\r\nCon", "tent-Type: text/plain\r\n\r\n")); 
   assert(0 == strcmp("hello world", test_buf));
 
-  // split with bullshit after the length
+  // broken in chunk_extension
   assert(0 < test_split("5; iha", "tew3;whatthefuck=aretheseparametersfor\r\nhello\r\n6; blahblah; blah\r\n world\r\n0\r\n\r\n"));
+  assert(0 == strcmp("hello world", test_buf));
+
+  // broken in chunk_extension just before = sign
+  assert(0 < test_split("5; ihatew3;whatthefuck", "=aretheseparametersfor\r\nhello\r\n6; blahblah; blah\r\n world\r\n0\r\n\r\n"));
   assert(0 == strcmp("hello world", test_buf));
 
   // now work with "all your base are belong to us"
   // because it is two digits in length (0x1e = 30) 
 
+  // easy
   assert(0 < test_string("1e\r\nall your base are belong to us\r\n0\r\n\r\n")); 
   assert(0 == strcmp("all your base are belong to us", test_buf));
 
+  // broken mid-chunk
   assert(0 < test_split("1e\r\nall your", " base are belong to us\r\n0\r\n\r\n")); 
   assert(0 == strcmp("all your base are belong to us", test_buf));
 
+  // broken between first CRLF 
   assert(0 < test_split("1e\r", "\nall your base are belong to us\r\n0\r\n\r\n")); 
   assert(0 == strcmp("all your base are belong to us", test_buf));
 
+  // broken on chunk length
   assert(0 < test_split("1", "e\r\nall your base are belong to us\r\n0\r\n\r\n")); 
   assert(0 == strcmp("all your base are belong to us", test_buf));
 
