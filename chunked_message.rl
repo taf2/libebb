@@ -223,6 +223,8 @@ int main()
   assert(0 < test_split("5\r\nhello\r", "\n6\r\n world\r\n0\r\n\r\n")); 
   assert(0 == strcmp("hello world", test_buf));
 
+  assert(0 < test_split("5\r\nhello\r\n", "6\r\n world\r\n0\r\n\r\n")); 
+  assert(0 == strcmp("hello world", test_buf));
 
   assert(0 < test_split("5\r\nhello", "\r\n6\r\n world\r\n0\r\n\r\n")); 
   assert(0 == strcmp("hello world", test_buf));
@@ -230,6 +232,19 @@ int main()
   assert(0 < test_split("5\r\nhel", "lo\r\n6\r\n world\r\n0\r\n\r\n")); 
   assert(0 == strcmp("hello world", test_buf));
 
+  assert(0 < test_split("5\r\nhello\r\n6\r\n world\r\n0", "\r\n\r\n")); 
+  assert(0 == strcmp("hello world", test_buf));
+
+  assert(0 < test_split("5\r\nhello\r\n6\r\n world\r\n0\r\n\r", "\n")); 
+  assert(0 == strcmp("hello world", test_buf));
+
+  // split with trailing headers. blech.
+  assert(0 < test_split("5\r\nhello\r\n6\r\n world\r\n0\r\nVary: *\r\nCon", "tent-Type: text/plain\r\n\r\n")); 
+  assert(0 == strcmp("hello world", test_buf));
+
+  // split with bullshit after the length
+  assert(0 < test_split("5; iha", "tew3;whatthefuck=aretheseparametersfor\r\nhello\r\n6; blahblah; blah\r\n world\r\n0\r\n\r\n"));
+  assert(0 == strcmp("hello world", test_buf));
 
   // now work with "all your base are belong to us"
   // because it is two digits in length (0x1e = 30) 
