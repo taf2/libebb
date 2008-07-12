@@ -15,6 +15,7 @@ typedef struct chunked_parser {
   size_t nread;
   const char * mark;
 
+  unsigned eating:1;
   size_t chunk_size;
   size_t field_start;
   size_t field_len;
