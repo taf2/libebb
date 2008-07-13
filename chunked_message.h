@@ -1,3 +1,5 @@
+/* Copyright Ryan Dahl, 2008. All rights reserved. */
+
 #ifndef chunk_parser_h
 #define chunk_parser_h
 

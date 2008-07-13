@@ -1,3 +1,5 @@
+/* Copyright Ryan Dahl, 2008. All rights reserved. */
+
 #include "chunked_message.h"
 #include <stdio.h>
 #include <assert.h>
