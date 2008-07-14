@@ -23,7 +23,7 @@ static void eip_push
   int i = 0;
   /* NO BOUNDS CHECKING - LIVING ON THE EDGE! */
   for(i = 0; parser->eip_stack[i] != NULL; i++) {;}
-  printf("push! (stack size before: %d)\n", i);
+  //printf("push! (stack size before: %d)\n", i);
   parser->eip_stack[i] = element;
 }
 
@@ -36,7 +36,7 @@ static ebb_element* eip_pop
   assert( ! eip_empty(parser) ); 
   /* NO BOUNDS CHECKING - LIVING ON THE EDGE! */
   for(i = 0; parser->eip_stack[i] != NULL; i++) {;}
-  printf("pop! (stack size before: %d)\n", i);
+  //printf("pop! (stack size before: %d)\n", i);
   top = parser->eip_stack[i-1];
   parser->eip_stack[i-1] = NULL;
   return top;
@@ -47,14 +47,14 @@ static ebb_element* eip_pop
   machine ebb_parser;
 
   action mark {
-    printf("mark!\n");
+    //printf("mark!\n");
     eip = parser->new_element();
     eip->base = p;
     eip_push(parser, eip);
   }
 
   action mmark {
-    printf("mmark!\n");
+    //printf("mmark!\n");
     eip = parser->new_element();
     eip->base = p;
     eip_push(parser, eip);
@@ -64,15 +64,19 @@ static ebb_element* eip_pop
     printf("write_field!\n");
     assert(parser->header_field_element == NULL);  
     eip = eip_pop(parser);
-    eip->len = p - eip->base;  
+    last = ebb_element_last(eip);
+    last->len = p - last->base;
     parser->header_field_element = eip;
+    assert(eip_empty(parser) && "eip_stack must be empty after header field");
   }
 
   action write_value {
     printf("write_value!\n");
     assert(parser->header_field_element != NULL);  
+
     eip = eip_pop(parser);
-    eip->len = p - eip->base;  
+    last = ebb_element_last(eip);
+    last->len = p - eip->base;  
 
     if(parser->http_field)
       parser->http_field( parser->data
@@ -86,10 +90,59 @@ static ebb_element* eip_pop
     eip = parser->header_field_element = NULL;
   }
 
+  action request_uri { 
+    //printf("request uri\n");
+    eip = eip_pop(parser);
+    last = ebb_element_last(eip);
+    last->len = p - eip->base;  
+    if(parser->request_uri)
+      parser->request_uri(parser->data, eip);
+    if(eip->free)
+      eip->free(eip);
+  }
+
+  action fragment { 
+    //printf("fragment\n");
+    eip = eip_pop(parser);
+    last = ebb_element_last(eip);
+    last->len = p - eip->base;  
+    if(parser->fragment)
+      parser->fragment(parser->data, eip);
+    if(eip->free)
+      eip->free(eip);
+  }
+
+  action query_string { 
+    //printf("query  string\n");
+    eip = eip_pop(parser);
+    last = ebb_element_last(eip);
+    last->len = p - eip->base;  
+    if(parser->query_string)
+      parser->query_string(parser->data, eip);
+    if(eip->free)
+      eip->free(eip);
+  }
+
+  action request_path {
+    //printf("request path\n");
+    eip = eip_pop(parser);
+    last = ebb_element_last(eip);
+    last->len = p - eip->base;  
+    if(parser->request_path)
+      parser->request_path(parser->data, eip);
+    if(eip->free)
+      eip->free(eip);
+  }
+
   action content_length {
     printf("content_length!\n");
     parser->current_request->content_length *= 10;
     parser->current_request->content_length += *p - '0';
+  }
+
+  action use_identity_encoding {
+    printf("use identity encoding\n");
+    parser->current_request->transfer_encoding = EBB_IDENTITY;
   }
 
   action use_chunked_encoding {
@@ -104,41 +157,11 @@ static ebb_element* eip_pop
 
 
   action request_method { 
-    printf("request method\n");
+    //printf("request method\n");
     eip = eip_pop(parser);
     eip->len = p - eip->base;  
     if(parser->request_method)
       parser->request_method(parser->data, eip);
-    if(eip->free)
-      eip->free(eip);
-  }
-
-  action request_uri { 
-    printf("request uri\n");
-    eip = eip_pop(parser);
-    eip->len = p - eip->base;  
-    if(parser->request_uri)
-      parser->request_uri(parser->data, eip);
-    if(eip->free)
-      eip->free(eip);
-  }
-
-  action fragment { 
-    printf("fragment\n");
-    eip = eip_pop(parser);
-    eip->len = p - eip->base;  
-    if(parser->fragment)
-      parser->fragment(parser->data, eip);
-    if(eip->free)
-      eip->free(eip);
-  }
-
-  action query_string { 
-    printf("query  string\n");
-    eip = eip_pop(parser);
-    eip->len = p - eip->base;  
-    if(parser->query_string)
-      parser->query_string(parser->data, eip);
     if(eip->free)
       eip->free(eip);
   }
@@ -151,16 +174,6 @@ static ebb_element* eip_pop
   action version_minor {
     parser->current_request->version_minor *= 10;
     parser->current_request->version_minor += *p - '0';
-  }
-
-  action request_path {
-    printf("request path\n");
-    eip = eip_pop(parser);
-    eip->len = p - eip->base;  
-    if(parser->request_path)
-      parser->request_path(parser->data, eip);
-    if(eip->free)
-      eip->free(eip);
   }
 
   action add_to_chunk_size {
@@ -203,6 +216,8 @@ static ebb_element* eip_pop
 
   action parse_body { 
     printf("got to parse body\n");
+    if(!eip_empty(parser))
+      printf("still on stack: '%s'\n", parser->eip_stack[0]->base);
     assert( eip_empty(parser) && "stack must be empty when at body");
 
     if(parser->current_request->transfer_encoding == EBB_CHUNKED) {
@@ -231,7 +246,6 @@ static ebb_element* eip_pop
   }
 
   action start_req {
-    printf("new request\n");
     if(parser->first_request) {
       for(request = parser->first_request; request->next; request = request->next) {;}
       request->next = parser->new_request(parser->data);
@@ -283,30 +297,42 @@ static ebb_element* eip_pop
   scheme = ( alpha | digit | "+" | "-" | "." )* ;
   absolute_uri = (scheme ":" (uchar | reserved )*);
   path = ( pchar+ ( "/" pchar* )* ) ;
-  query = ( uchar | reserved )* >mark %query_string ;
+  query = ( uchar | reserved )* >mark >{printf("mark query\n");} %query_string ;
   param = ( pchar | "/" )* ;
   params = ( param ( ";" param )* ) ;
   rel_path = ( path? (";" params)? ) ("?" query)?;
-  absolute_path = ( "/"+ rel_path ) >mmark %request_path;
-  Request_URI = ( "*" | absolute_uri | absolute_path ) >mark %request_uri;
-  Fragment = ( uchar | reserved )* >mark %fragment;
-  Method = ( upper | digit | safe ){1,20} >mark %request_method;
+  absolute_path = ( "/"+ rel_path ) >mmark >{printf("mark abspath\n");} %request_path;
+  Request_URI = ( "*" | absolute_uri | absolute_path ) >mark >{printf("mark uri\n");} %request_uri;
+  Fragment = ( uchar | reserved )* >mark >{printf("mark fragment\n");} %fragment;
+  Method = ( upper | digit | safe ){1,20} >mark >{printf("mark method\n");} %request_method;
   http_number = (digit+ $version_major "." digit+ $version_minor);
   HTTP_Version = ( "HTTP/" http_number );
-  field_name = ( token -- ":" )+ >mark %write_field;
-  field_value = any* >mark %write_value;
-  message_header = field_name ":" " "* field_value :> CRLF;
-  # Header values that are needed for parsing the message
-  content_length = "Content-Length:"i " "* (digit+ >mark $content_length %write_value);
-  transfer_encoding = "Transfer-Encoding:"i " "* 
-                      ( "identity" 
-                      | (field_value -- "identity") %use_chunked_encoding
-                      );
-  trailer = "Trailer:"i " "* (field_value %trailer);
-  needed_header = (content_length | transfer_encoding | trailer) :> CRLF;
-  unneeded_header = message_header -- needed_header;
+
+  field_name = ( token -- ":" )+ %write_field;
+  field_value = ((any - " ") any*)? >mark >{printf("mark value\n");} %write_value;
+
+  head_sep = ":" " "**;
+  message_header = field_name head_sep field_value :> CRLF;
+
+  cl = "Content-Length"i %write_field  head_sep
+       digit+ >mark >{printf("mark cl value\n");} $content_length %write_value;
+
+  te = "Transfer-Encoding"i %write_field head_sep %use_identity_encoding 
+       "identity"i >mark >{printf("mark identity\n");} %use_chunked_encoding %write_value;
+
+  t =  "Trailer"i %write_field head_sep
+        field_value %trailer;
+
+  rest = (field_name head_sep field_value);
+
+  header  = cl     @(headers,4)
+          | te     @(headers,4)
+          | t      @(headers,4)
+          | rest   @(headers,1)
+          ;
+
   Request_Line = ( Method " " Request_URI ("#" Fragment)? " " HTTP_Version CRLF ) ;
-  RequestHeader = Request_Line (needed_header | unneeded_header)* CRLF;
+  RequestHeader = Request_Line (header >mark >{printf("mark headbeg\n");} :> CRLF)* :> CRLF;
 
 # chunked message
   trailing_headers = message_header*;
@@ -367,7 +393,7 @@ size_t ebb_parser_execute
   , size_t len
   )
 {
-  ebb_element *eip; 
+  ebb_element *eip, *last; 
   ebb_request *request; 
   const char *p, *pe;
   int i, cs = parser->cs;
@@ -391,7 +417,7 @@ size_t ebb_parser_execute
 
   /* each on the eip stack gets expanded */
   for(i = 0; parser->eip_stack[i] != NULL; i++) {
-    ebb_element *last = ebb_element_last(parser->eip_stack[i]);
+    last = ebb_element_last(parser->eip_stack[i]);
     last->next = parser->new_element();
     last->next->base = buffer;
   }
@@ -477,6 +503,16 @@ void ebb_element_strcpy
     strncat(dest, element->base, element->len);
 }
 
+void ebb_element_printf
+  ( ebb_element *element
+  , const char *format
+  )
+{
+  char str[1000];
+  ebb_element_strcpy(element, str);
+  printf(format, str);
+}
+
 #ifdef UNITTEST
 #include <stdlib.h>
 
@@ -484,13 +520,14 @@ static ebb_parser parser;
 struct request_data {
   char request_method[500];
   char request_path[500];
+  char request_uri[500];
   char fragment[500];
   char query_string[500];
   char body[500];
   ebb_request request;
 };
 static struct request_data requests[5];
-static int req_index;
+static int num_requests;
 
 ebb_element* new_element ()
 {
@@ -501,48 +538,56 @@ ebb_element* new_element ()
 
 ebb_request* new_request ()
 {
-  requests[req_index].body[0] = 0;
-  ebb_request *r = &requests[req_index].request ;
+  requests[num_requests].body[0] = 0;
+  ebb_request *r = &requests[num_requests].request ;
   ebb_request_init(r);
+  printf("new request %d\n", num_requests);
   return r;
 }
 
 void request_complete()
 {
   printf("request complete\n");
-  req_index++;
+  num_requests++;
 }
 
 void request_method_cb(void *data, ebb_element *el)
 {
-  ebb_element_strcpy(el, requests[req_index].request_method);
-  printf("got request method: %s\n", requests[req_index].request_method);
+  ebb_element_strcpy(el, requests[num_requests].request_method);
 }
 
 void request_path_cb(void *data, ebb_element *el)
 {
-  ebb_element_strcpy(el, requests[req_index].request_path);
-  printf("got request path: %s\n", requests[req_index].request_path);
+  ebb_element_strcpy(el, requests[num_requests].request_path);
+}
+
+void request_uri_cb(void *data, ebb_element *el)
+{
+  ebb_element_strcpy(el, requests[num_requests].request_uri);
 }
 
 void fragment_cb(void *data, ebb_element *el)
 {
-  ebb_element_strcpy(el, requests[req_index].fragment);
-  printf("got fragment: %s\n", requests[req_index].fragment);
+  ebb_element_strcpy(el, requests[num_requests].fragment);
+}
+
+void http_field_cb(void *data, ebb_element *field, ebb_element *value)
+{
+  ebb_element_printf(field, "field: %s\n");
+  ebb_element_printf(value, "value: %s\n\n");
 }
 
 
 void query_string_cb(void *data, ebb_element *el)
 {
-  ebb_element_strcpy(el, requests[req_index].query_string);
-  printf("got query_string: %s\n", requests[req_index].query_string);
+  ebb_element_strcpy(el, requests[num_requests].query_string);
 }
 
 
 void chunk_handler(void *data, const char *p, size_t len)
 {
-  strncat(requests[req_index].body, p, len);
-  printf("chunk_handler: '%s'\n", requests[req_index].body);
+  strncat(requests[num_requests].body, p, len);
+  printf("chunk_handler: '%s'\n", requests[num_requests].body);
 }
 
 int test_error
@@ -550,15 +595,17 @@ int test_error
   )
 {
   size_t traversed = 0;
-  req_index = 0;
+  num_requests = 0;
 
   ebb_parser_init(&parser);
 
   parser.new_element = new_element;
   parser.new_request = new_request;
   parser.request_complete = request_complete;
+  parser.http_field = http_field_cb;
   parser.request_method = request_method_cb;
   parser.request_path = request_path_cb;
+  parser.request_uri = request_uri_cb;
   parser.fragment = fragment_cb;
   parser.query_string = query_string_cb;
   parser.chunk_handler = chunk_handler;
@@ -577,6 +624,7 @@ int main()
   assert(test_error("GET / HTP/1.1\r\n\r\n"));
 
   assert(!test_error("GET /hello/world HTTP/1.1\r\n\r\n"));
+  assert(1 == num_requests);
   assert(0 == strcmp(requests[0].body, ""));
   assert(0 == strcmp(requests[0].fragment, ""));
   assert(0 == strcmp(requests[0].query_string, ""));
@@ -585,6 +633,23 @@ int main()
   assert(1 == requests[0].request.version_major);
   assert(1 == requests[0].request.version_minor);
 
+  assert(!test_error("GET /hello/world HTTP/1.1\r\nAccept: */*\r\n\r\n"));
+  assert(1 == num_requests);
+  assert(0 == strcmp(requests[0].body, ""));
+  assert(0 == strcmp(requests[0].fragment, ""));
+  assert(0 == strcmp(requests[0].query_string, ""));
+  assert(0 == strcmp(requests[0].request_method, "GET"));
+  assert(0 == strcmp(requests[0].request_path, "/hello/world"));
+  assert(0 == strcmp(requests[0].request_uri, "/hello/world"));
+  assert(1 == requests[0].request.version_major);
+  assert(1 == requests[0].request.version_minor);
+
+  // error if there is a body without content length
+  assert(test_error("GET /hello/world HTTP/1.1\r\nAccept: */*\r\nHello\r\n"));
+
+  // no error if there is a is body with content length
+  assert(test_error("GET /hello/world HTTP/1.1\r\nAccept: */*\r\nContent-Length: 5\r\n\r\nHello"));
+  assert(0 == strcmp(requests[0].body, "Hello"));
 
   printf("okay\n");
   return 0;

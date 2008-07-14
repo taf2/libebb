@@ -99,4 +99,9 @@ size_t ebb_element_len
   ( ebb_element *element
   );
 
+void ebb_element_printf
+  ( ebb_element *element
+  , const char *format
+  );
+
 #endif
