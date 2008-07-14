@@ -1,12 +1,15 @@
 
-#include "ew_parser.h"
+#include "parser.h"
 #include <stdio.h>
 #include <assert.h>
 
-#define LEN(AT, FPC) (FPC - buffer - parser->AT)
-#define MARK(M,FPC) (parser->M = (FPC) - buffer)
-#define PTR_TO(F) (buffer + parser->F)
-
+#ifndef TRUE
+# define TRUE 1
+# define FALSE 0
+#endif
+#ifndef MIN
+# define MIN(a,b) (a < b ? a : b)
+#endif
 #define REMAINING (pe - p)
 
 #define eip_empty(parser) (parser->eip_stack[0] == NULL)
@@ -40,7 +43,6 @@ static ew_element* eip_pop
   machine ew_parser;
 
   action mark {
-    assert(parser->eip == NULL);  
     eip = parser->new_element();
     eip->base = p;
     eip_push(parser, eip);
@@ -75,7 +77,7 @@ static ew_element* eip_pop
   }
 
   action use_chunked_encoding {
-    parser->current_request->transfer_encoding = EW_TRANSFER_ENCODING_CHUNKED;
+    parser->current_request->transfer_encoding = EW_CHUNKED;
   }
 
   action trailer {
@@ -157,12 +159,12 @@ static ew_element* eip_pop
   action parse_body { 
     assert( eip_empty(parser) && "stack must be empty when at body");
 
-    if(parser->transfer_encoding == EW_TRANSFER_ENCODING_CHUNKED) {
+    if(parser->current_request->transfer_encoding == EW_CHUNKED) {
       fhold; 
       fgoto Chunked_Body;
 
-    } else if(parser->content_length > 0) { 
-      parser->chunk_size = parser->content_length;
+    } else if(parser->current_request->content_length > 0) { 
+      parser->chunk_size = parser->current_request->content_length;
 
       /* skip content-length bytes */
       if(parser->chunk_size > REMAINING) {
@@ -191,6 +193,7 @@ static ew_element* eip_pop
   }
 
   action end_req {
+    parser->request_complete(parser->data);
     parser->current_request->complete = TRUE;
   }
 
@@ -238,7 +241,7 @@ static ew_element* eip_pop
   http_number = ( digit+ "." digit+ ) ;
   HTTP_Version = ( "HTTP/" http_number ) >mark %http_version ;
   field_name = ( token -- ":" )+ >mark %write_field;
-  field_value = any* >start_value %write_value;
+  field_value = any* >mark %write_value;
   message_header = field_name ":" " "* field_value :> CRLF;
   # Header values that are needed for parsing the message
   content_length = "Content-Length:"i " "* (digit+ >mark $content_length %write_value);
@@ -248,7 +251,7 @@ static ew_element* eip_pop
                       );
   trailer = "Trailer:"i " "* (field_value %trailer);
   needed_header = (content_length | transfer_encoding | trailer) :> CRLF;
-  unneeded_header = message_header -- needed_headers;
+  unneeded_header = message_header -- needed_header;
   Request_Line = ( Method " " Request_URI ("#" Fragment)? " " HTTP_Version CRLF ) ;
   RequestHeader = Request_Line (needed_header | unneeded_header)* CRLF;
 
@@ -286,8 +289,8 @@ void ew_parser_init
 
   parser->eip_stack[0] = NULL;
   parser->current_request = NULL;
+  parser->header_field_element = NULL;
 
-  parser->mark = 0;
   parser->nread = 0;
 
   parser->chunk_handler = NULL;
@@ -317,7 +320,7 @@ size_t ew_parser_execute
   pe = buffer+len;
 
   if(0 < parser->chunk_size && parser->eating) {
-    size_t eat; = MIN(len, parser->chunk_size);
+    size_t eat = MIN(len, parser->chunk_size);
     if(eat == parser->chunk_size) {
       parser->eating = FALSE;
     }
@@ -342,12 +345,10 @@ size_t ew_parser_execute
   /* each on the eip stack gets len */
   for(i = 0; parser->eip_stack[i] != NULL; i++) {
     parser->eip_stack[i]->len = pe - parser->eip_stack[i]->base;
+    assert( parser->eip_stack[i]->base < pe && "mark is after buffer end");
   }
 
   assert(p <= pe && "buffer overflow after parsing execute");
-
-  if(parser->mark)
-    assert(parser->mark < pe && "mark is after buffer end");
 
   return(p - buffer);
 }
@@ -380,6 +381,19 @@ void ew_request_init
   )
 {
   request->content_length = 0;
-  request->transfer_encoding = EW_TRANSFER_ENCODING_IDENTITY;
+  request->transfer_encoding = EW_IDENTITY;
   request->next = NULL;
+  request->complete = FALSE;
 }
+
+#ifdef UNITTEST
+
+
+int main() 
+{
+  printf("okay\n");
+  return 0;
+}
+
+#endif
+

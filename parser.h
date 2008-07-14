@@ -26,7 +26,10 @@ struct ew_parser {
   /* appends to ew_element linked list 
    * returns new element
    */
-  ew_element* (*expand_element)(ew_element*, const char *base, size_t len);
+  ew_element* (*expand_element)(ew_element*);
+
+  ew_request* (*new_request)(void*);
+  void (*request_complete)(void*);
 
   void (*chunk_handler)(void *data, const char *at, size_t length);
   void (*http_field)(void *data, ew_element *field, ew_element *value);
@@ -48,17 +51,19 @@ struct ew_parser {
    * grammar doesn't have more than 3 nested elements
    */
   ew_element *eip_stack[3]; 
-
+  ew_element *header_field_element;
   ew_request *current_request;
+  ew_request *requests;
 };
 
-#define EW_TRANSFER_ENCODING_IDENTITY 0
-#define EW_TRANSFER_ENCODING_CHUNKED  1
+#define EW_IDENTITY 0
+#define EW_CHUNKED  1
 
 struct ew_request {
   size_t content_length;
   int transfer_encoding;
   ew_request *next;
+  unsigned complete:1;
 };
 
 int ew_element_init
