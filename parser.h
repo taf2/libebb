@@ -2,11 +2,11 @@
 #define ew_h
 #include <sys/types.h> 
 
-typedef void (*element_cb)(void *data, const char *at, size_t length);
-typedef void (*field_cb)(void *data, const char *field, size_t flen, const char *value, size_t vlen);
-
 typedef struct ew_element ew_element;
 typedef struct ew_parser ew_parser;
+typedef struct ew_request ew_request;
+typedef void (*element_cb)(void *data, ew_element *);
+
 
 struct ew_element {
   const char *base;
@@ -14,12 +14,8 @@ struct ew_element {
   ew_element *next;  
 }; 
 
-int ew_element_init
-  ( ew_element *element
-  );
 
-
-struct ew_parser { 
+struct ew_parser {
 
 /* PUBLIC */
   void *data;
@@ -27,10 +23,19 @@ struct ew_parser {
   /* allocates and initializes a new element */
   ew_element* (*new_element)();
 
-  /* appends to ew_element linked list */
-  void (*expand_element)(ew_element*, const char *base, size_t len);
+  /* appends to ew_element linked list 
+   * returns new element
+   */
+  ew_element* (*expand_element)(ew_element*, const char *base, size_t len);
 
-  element_cb chunk_handler;
+  void (*chunk_handler)(void *data, const char *at, size_t length);
+  void (*http_field)(void *data, ew_element *field, ew_element *value);
+  element_cb request_method;
+  element_cb request_uri;
+  element_cb fragment;
+  element_cb request_path;
+  element_cb query_string;
+  element_cb http_version;
 
 /* PRIVATE */
   int cs;
@@ -44,11 +49,21 @@ struct ew_parser {
    */
   ew_element *eip_stack[3]; 
 
-  size_t mark;
-  size_t field_start;
-  size_t field_len;
-  size_t query_start;
+  ew_request *current_request;
 };
+
+#define EW_TRANSFER_ENCODING_IDENTITY 0
+#define EW_TRANSFER_ENCODING_CHUNKED  1
+
+struct ew_request {
+  size_t content_length;
+  int transfer_encoding;
+  ew_request *next;
+};
+
+int ew_element_init
+  ( ew_element *element
+  );
 
 void ew_parser_init
   ( ew_parser *parser

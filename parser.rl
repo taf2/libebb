@@ -35,7 +35,6 @@ static ew_element* eip_pop
   return top;
 }
 
-    
 
 %%{
   machine ew_parser;
@@ -69,6 +68,20 @@ static ew_element* eip_pop
 
     eip = parser->header_field_element = NULL;
   }
+
+  action content_length {
+    parser->current_request->content_length *= 10;
+    parser->current_request->content_length += *p - '0';
+  }
+
+  action use_chunked_encoding {
+    parser->current_request->transfer_encoding = EW_TRANSFER_ENCODING_CHUNKED;
+  }
+
+  action trailer {
+    /* not implemenetd yet. (do requests even have trailing headers?) */
+  }
+
 
   action request_method { 
     eip = eip_pop(parser);
@@ -144,7 +157,7 @@ static ew_element* eip_pop
   action parse_body { 
     assert( eip_empty(parser) && "stack must be empty when at body");
 
-    if(parser->transfer_encoding == EW_CHUNKED) {
+    if(parser->transfer_encoding == EW_TRANSFER_ENCODING_CHUNKED) {
       fhold; 
       fgoto Chunked_Body;
 
@@ -169,6 +182,17 @@ static ew_element* eip_pop
     }
   }
 
+  action start_req {
+    for(request = parser->requests; request->next; request = request->next) {;}
+    request->next = parser->new_request(parser->data);
+    request = request->next;
+    request->next = NULL;
+    parser->current_request = request;
+  }
+
+  action end_req {
+    parser->current_request->complete = TRUE;
+  }
 
 #
 ##
@@ -216,11 +240,20 @@ static ew_element* eip_pop
   field_name = ( token -- ":" )+ >mark %write_field;
   field_value = any* >start_value %write_value;
   message_header = field_name ":" " "* field_value :> CRLF;
+  # Header values that are needed for parsing the message
+  content_length = "Content-Length:"i " "* (digit+ >mark $content_length %write_value);
+  transfer_encoding = "Transfer-Encoding:"i " "* 
+                      ( "identity" 
+                      | (field_value -- "identity") %use_chunked_encoding
+                      );
+  trailer = "Trailer:"i " "* (field_value %trailer);
+  needed_header = (content_length | transfer_encoding | trailer) :> CRLF;
+  unneeded_header = message_header -- needed_headers;
   Request_Line = ( Method " " Request_URI ("#" Fragment)? " " HTTP_Version CRLF ) ;
-  RequestHeader = Request_Line ( message_header )* CRLF;
+  RequestHeader = Request_Line (needed_header | unneeded_header)* CRLF;
 
 # chunked message
-  trailer = message_header*;
+  trailing_headers = message_header*;
   #chunk_ext_val   = token | quoted_string;
   chunk_ext_val = token*;
   chunk_ext_name = token*;
@@ -231,9 +264,9 @@ static ew_element* eip_pop
   chunk_body = any >skip_chunk_data;
   chunk_begin = chunk_size chunk_extension CRLF;
   chunk = chunk_begin chunk_body chunk_end;
-  Chunked_Body := chunk* last_chunk trailer CRLF @end_chunked_body zlen;
+  Chunked_Body := chunk* last_chunk trailing_headers CRLF @end_chunked_body zlen;
 
-  Request = RequestHeader @parse_body zlen;
+  Request = (RequestHeader @parse_body zlen) >start_req @end_req;
   
 # sequence of requests (for keep-alive)
   main := Request+;
@@ -252,14 +285,19 @@ void ew_parser_init
   parser->eating = 0;
 
   parser->eip_stack[0] = NULL;
+  parser->current_request = NULL;
 
   parser->mark = 0;
-  parser->field_start = 0;
-  parser->field_len = 0;
-  parser->query_start = 0;
   parser->nread = 0;
 
   parser->chunk_handler = NULL;
+  parser->http_field = NULL;
+  parser->request_method = NULL;
+  parser->request_uri = NULL;
+  parser->fragment = NULL;
+  parser->request_path = NULL;
+  parser->query_string = NULL;
+  parser->http_version = NULL;
 }
 
 
@@ -270,10 +308,10 @@ size_t ew_parser_execute
   , size_t len
   )
 {
-  ew_element eip = NULL; 
+  ew_element *eip; 
+  ew_request *request; 
   const char *p, *pe;
   int i, cs = parser->cs;
-
 
   p = buffer;
   pe = buffer+len;
@@ -334,6 +372,14 @@ int ew_element_init
 {
   element->base = NULL;
   element->len = 0;
-  element->next = NULL;
+  element->next = element;
 }
 
+void ew_request_init
+  ( ew_request *request
+  )
+{
+  request->content_length = 0;
+  request->transfer_encoding = EW_TRANSFER_ENCODING_IDENTITY;
+  request->next = NULL;
+}
