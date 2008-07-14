@@ -1,38 +1,45 @@
-#ifndef ew_h
-#define ew_h
+#ifndef ebb_parser_h
+#define ebb_parser_h
 #include <sys/types.h> 
 
-typedef struct ew_element ew_element;
-typedef struct ew_parser ew_parser;
-typedef struct ew_request ew_request;
-typedef void (*element_cb)(void *data, ew_element *);
+typedef struct ebb_element ebb_element;
+typedef struct ebb_parser ebb_parser;
+typedef struct ebb_request ebb_request;
+typedef void (*element_cb)(void *data, ebb_element *);
 
+#define EBB_IDENTITY 0
+#define EBB_CHUNKED  1
 
-struct ew_element {
+struct ebb_request {
+  size_t content_length;
+  int transfer_encoding;
+  ebb_request *next;
+  unsigned complete:1;
+
+  void (*free) (ebb_request*);
+};
+
+struct ebb_element {
   const char *base;
   size_t len; 
-  ew_element *next;  
+  ebb_element *next;  
+
+  void (*free) (ebb_element*);
 }; 
 
-
-struct ew_parser {
+struct ebb_parser {
 
 /* PUBLIC */
   void *data;
 
-  /* allocates and initializes a new element */
-  ew_element* (*new_element)();
+  /* allocates a new element */
+  ebb_element* (*new_element)();
 
-  /* appends to ew_element linked list 
-   * returns new element
-   */
-  ew_element* (*expand_element)(ew_element*);
-
-  ew_request* (*new_request)(void*);
+  ebb_request* (*new_request)(void*);
   void (*request_complete)(void*);
 
   void (*chunk_handler)(void *data, const char *at, size_t length);
-  void (*http_field)(void *data, ew_element *field, ew_element *value);
+  void (*http_field)(void *data, ebb_element *field, ebb_element *value);
   element_cb request_method;
   element_cb request_uri;
   element_cb fragment;
@@ -50,42 +57,36 @@ struct ew_parser {
   /* element in progress stack 
    * grammar doesn't have more than 3 nested elements
    */
-  ew_element *eip_stack[3]; 
-  ew_element *header_field_element;
-  ew_request *current_request;
-  ew_request *requests;
+  ebb_element *eip_stack[3]; 
+  ebb_element *header_field_element;
+  ebb_request *current_request;
+  ebb_request *first_request;
 };
 
-#define EW_IDENTITY 0
-#define EW_CHUNKED  1
-
-struct ew_request {
-  size_t content_length;
-  int transfer_encoding;
-  ew_request *next;
-  unsigned complete:1;
-};
-
-int ew_element_init
-  ( ew_element *element
+int ebb_element_init
+  ( ebb_element *element
   );
 
-void ew_parser_init
-  ( ew_parser *parser
+void ebb_parser_init
+  ( ebb_parser *parser
+  );
+
+void ebb_request_init
+  ( ebb_request *
   );
 
 size_t chunked_parser_execute
-  ( ew_parser *parser
+  ( ebb_parser *parser
   , const char *data
   , size_t len
   );
 
-int ew_parser_has_error
-  ( ew_parser *parser
+int ebb_parser_has_error
+  ( ebb_parser *parser
   );
 
-int ew_parser_is_finished
-  ( ew_parser *parser
+int ebb_parser_is_finished
+  ( ebb_parser *parser
   );
 
 #endif
