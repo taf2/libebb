@@ -1,7 +1,6 @@
 SOURCES := $(wildcard *.c)
 
-test: chunk_test parser_test
-	./chunk_test
+test: parser_test
 	./parser_test
 
 chunk_test: chunked_message.c chunked_message.h

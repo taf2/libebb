@@ -16,6 +16,9 @@ struct ebb_request {
   ebb_request *next;
   unsigned complete:1;
 
+  unsigned int version_major;
+  unsigned int version_minor;
+
   void (*free) (ebb_request*);
 };
 
@@ -45,7 +48,6 @@ struct ebb_parser {
   element_cb fragment;
   element_cb request_path;
   element_cb query_string;
-  element_cb http_version;
 
 /* PRIVATE */
   int cs;
@@ -63,16 +65,8 @@ struct ebb_parser {
   ebb_request *first_request;
 };
 
-int ebb_element_init
-  ( ebb_element *element
-  );
-
 void ebb_parser_init
   ( ebb_parser *parser
-  );
-
-void ebb_request_init
-  ( ebb_request *
   );
 
 size_t chunked_parser_execute
@@ -87,6 +81,22 @@ int ebb_parser_has_error
 
 int ebb_parser_is_finished
   ( ebb_parser *parser
+  );
+
+void ebb_request_init
+  ( ebb_request *
+  );
+
+int ebb_element_init
+  ( ebb_element *element
+  );
+
+ebb_element* ebb_element_last
+  ( ebb_element *element
+  );
+
+size_t ebb_element_len
+  ( ebb_element *element
   );
 
 #endif

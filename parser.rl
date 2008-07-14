@@ -2,6 +2,7 @@
 #include "parser.h"
 #include <stdio.h>
 #include <assert.h>
+#include <string.h>
 
 #ifndef TRUE
 # define TRUE 1
@@ -142,14 +143,14 @@ static ebb_element* eip_pop
       eip->free(eip);
   }
 
-  action http_version {	
-    printf("http version\n");
-    eip = eip_pop(parser);
-    eip->len = p - eip->base;  
-    if(parser->http_version)
-      parser->http_version(parser->data, eip);
-    if(eip->free)
-      eip->free(eip);
+  action version_major {
+    parser->current_request->version_major *= 10;
+    parser->current_request->version_major += *p - '0';
+  }
+
+  action version_minor {
+    parser->current_request->version_minor *= 10;
+    parser->current_request->version_minor += *p - '0';
   }
 
   action request_path {
@@ -290,8 +291,8 @@ static ebb_element* eip_pop
   Request_URI = ( "*" | absolute_uri | absolute_path ) >mark %request_uri;
   Fragment = ( uchar | reserved )* >mark %fragment;
   Method = ( upper | digit | safe ){1,20} >mark %request_method;
-  http_number = ( digit+ "." digit+ ) ;
-  HTTP_Version = ( "HTTP/" http_number ) >mark %http_version ;
+  http_number = (digit+ $version_major "." digit+ $version_minor);
+  HTTP_Version = ( "HTTP/" http_number );
   field_name = ( token -- ":" )+ >mark %write_field;
   field_value = any* >mark %write_value;
   message_header = field_name ":" " "* field_value :> CRLF;
@@ -356,7 +357,6 @@ void ebb_parser_init
   parser->fragment = NULL;
   parser->request_path = NULL;
   parser->query_string = NULL;
-  parser->http_version = NULL;
 }
 
 
@@ -391,11 +391,9 @@ size_t ebb_parser_execute
 
   /* each on the eip stack gets expanded */
   for(i = 0; parser->eip_stack[i] != NULL; i++) {
-    ebb_element *el;
-    for(el = parser->eip_stack[i]; el->next; el = el->next) {;}
-    el->next = parser->new_element();
-    el = el->next;
-    el->base = buffer;
+    ebb_element *last = ebb_element_last(parser->eip_stack[i]);
+    last->next = parser->new_element();
+    last->next->base = buffer;
   }
 
   %% write exec;
@@ -428,33 +426,71 @@ int ebb_parser_is_finished
   return parser->cs == ebb_parser_first_final;
 }
 
-int ebb_element_init
-  ( ebb_element *element
-  ) 
-{
-  element->base = NULL;
-  element->len = 0;
-  element->next = element;
-  element->free = NULL;
-}
-
 void ebb_request_init
   ( ebb_request *request
   )
 {
   request->content_length = 0;
+  request->version_major = 0;
+  request->version_minor = 0;
   request->transfer_encoding = EBB_IDENTITY;
   request->complete = FALSE;
   request->next = NULL;
   request->free = NULL;
 }
 
+int ebb_element_init
+  ( ebb_element *element
+  ) 
+{
+  element->base = NULL;
+  element->len = 0;
+  element->next = NULL;
+  element->free = NULL;
+}
+
+ebb_element* ebb_element_last
+  ( ebb_element *element
+  )
+{
+  for( ; element->next; element = element->next) {;}
+  return element;
+}
+
+size_t ebb_element_len
+  ( ebb_element *element
+  )
+{
+  size_t len; 
+  for(len = 0; element; element = element->next)
+    len += element->len;
+  return len;
+}
+
+void ebb_element_strcpy
+  ( ebb_element *element
+  , char *dest
+  )
+{
+  dest[0] = '\0';
+  for( ; element; element = element->next) 
+    strncat(dest, element->base, element->len);
+}
+
 #ifdef UNITTEST
 #include <stdlib.h>
-#include <string.h>
 
-static char body[500];
 static ebb_parser parser;
+struct request_data {
+  char request_method[500];
+  char request_path[500];
+  char fragment[500];
+  char query_string[500];
+  char body[500];
+  ebb_request request;
+};
+static struct request_data requests[5];
+static int req_index;
 
 ebb_element* new_element ()
 {
@@ -465,26 +501,48 @@ ebb_element* new_element ()
 
 ebb_request* new_request ()
 {
-  ebb_request *r = malloc(sizeof(ebb_request));
+  requests[req_index].body[0] = 0;
+  ebb_request *r = &requests[req_index].request ;
   ebb_request_init(r);
   return r;
 }
 
-void request_method(void *data, ebb_element *el)
+void request_complete()
 {
-  printf("got request method\n");
+  printf("request complete\n");
+  req_index++;
 }
 
-void request_path(void *data, ebb_element *el)
+void request_method_cb(void *data, ebb_element *el)
 {
-  printf("got request path\n");
+  ebb_element_strcpy(el, requests[req_index].request_method);
+  printf("got request method: %s\n", requests[req_index].request_method);
 }
+
+void request_path_cb(void *data, ebb_element *el)
+{
+  ebb_element_strcpy(el, requests[req_index].request_path);
+  printf("got request path: %s\n", requests[req_index].request_path);
+}
+
+void fragment_cb(void *data, ebb_element *el)
+{
+  ebb_element_strcpy(el, requests[req_index].fragment);
+  printf("got fragment: %s\n", requests[req_index].fragment);
+}
+
+
+void query_string_cb(void *data, ebb_element *el)
+{
+  ebb_element_strcpy(el, requests[req_index].query_string);
+  printf("got query_string: %s\n", requests[req_index].query_string);
+}
+
 
 void chunk_handler(void *data, const char *p, size_t len)
 {
-  //printf("chunk_handler: '%s'", body);
-  strncat(body, p, len);
-  //printf(" -> '%s'\n", body);
+  strncat(requests[req_index].body, p, len);
+  printf("chunk_handler: '%s'\n", requests[req_index].body);
 }
 
 int test_error
@@ -492,14 +550,17 @@ int test_error
   )
 {
   size_t traversed = 0;
-  body[0] = 0;
+  req_index = 0;
 
   ebb_parser_init(&parser);
 
   parser.new_element = new_element;
   parser.new_request = new_request;
-  parser.request_method = request_method;
-  parser.request_path = request_path;
+  parser.request_complete = request_complete;
+  parser.request_method = request_method_cb;
+  parser.request_path = request_path_cb;
+  parser.fragment = fragment_cb;
+  parser.query_string = query_string_cb;
   parser.chunk_handler = chunk_handler;
 
   traversed = ebb_parser_execute(&parser, buf, strlen(buf));
@@ -513,8 +574,16 @@ int main()
 
 
   assert(test_error("hello world"));
-  //assert(test_error("GET / HTP/1.1\r\n\r\n"));
+  assert(test_error("GET / HTP/1.1\r\n\r\n"));
+
   assert(!test_error("GET /hello/world HTTP/1.1\r\n\r\n"));
+  assert(0 == strcmp(requests[0].body, ""));
+  assert(0 == strcmp(requests[0].fragment, ""));
+  assert(0 == strcmp(requests[0].query_string, ""));
+  assert(0 == strcmp(requests[0].request_method, "GET"));
+  assert(0 == strcmp(requests[0].request_path, "/hello/world"));
+  assert(1 == requests[0].request.version_major);
+  assert(1 == requests[0].request.version_minor);
 
 
   printf("okay\n");
