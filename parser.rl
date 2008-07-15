@@ -77,7 +77,7 @@ static ebb_element* eip_pop
 
     eip = eip_pop(parser);
     last = ebb_element_last(eip);
-    last->len = p - eip->base;  
+    last->len = p - last->base;  
 
     if(parser->header_handler)
       parser->header_handler( parser->data
@@ -95,7 +95,7 @@ static ebb_element* eip_pop
     //printf("request uri\n");
     eip = eip_pop(parser);
     last = ebb_element_last(eip);
-    last->len = p - eip->base;  
+    last->len = p - last->base;  
     if(parser->request_uri)
       parser->request_uri(parser->data, eip);
     if(eip->free)
@@ -106,7 +106,7 @@ static ebb_element* eip_pop
     //printf("fragment\n");
     eip = eip_pop(parser);
     last = ebb_element_last(eip);
-    last->len = p - eip->base;  
+    last->len = p - last->base;  
     if(parser->fragment)
       parser->fragment(parser->data, eip);
     if(eip->free)
@@ -117,7 +117,7 @@ static ebb_element* eip_pop
     //printf("query  string\n");
     eip = eip_pop(parser);
     last = ebb_element_last(eip);
-    last->len = p - eip->base;  
+    last->len = p - last->base;  
     if(parser->query_string)
       parser->query_string(parser->data, eip);
     if(eip->free)
@@ -128,7 +128,7 @@ static ebb_element* eip_pop
     //printf("request path\n");
     eip = eip_pop(parser);
     last = ebb_element_last(eip);
-    last->len = p - eip->base;  
+    last->len = p - last->base;  
     if(parser->request_path)
       parser->request_path(parser->data, eip);
     if(eip->free)
@@ -518,6 +518,7 @@ void ebb_request_init
   ( ebb_request *request
   )
 {
+  request->body_read = 0;
   request->content_length = 0;
   request->version_major = 0;
   request->version_minor = 0;

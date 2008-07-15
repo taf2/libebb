@@ -228,17 +228,26 @@ int main()
   assert(1 == requests[REQNUM].request.version_major); \
   assert(1 == requests[REQNUM].request.version_minor); \
   assert(1 == requests[REQNUM].num_headers); \
-  assert_req_str_eql(0, header_fields[0], "Accept"); \
-  assert_req_str_eql(0, header_values[0], "*/*");
+  assert(0 == strcmp(requests[REQNUM].header_fields[0], "Accept")); \
+  assert(0 == strcmp(requests[REQNUM].header_values[0], "*/*")); 
   assert_req2(0);
 
   // post - one header - no body
   const char *req3 = "POST /req3 HTTP/1.1\r\nAccept: */*\r\n\r\n"; 
   assert(!test_error(req3));
-  assert_req_str_eql(0, body, "");
-  assert(1 == requests[0].num_headers);
-  assert_req_str_eql(0, header_fields[0], "Accept");
-  assert_req_str_eql(0, header_values[0], "*/*");
+  assert(1 == num_requests);
+#define assert_req3(REQNUM) \
+  assert(0 == strcmp(requests[REQNUM].body, "")); \
+  assert(0 == strcmp(requests[REQNUM].fragment, "")); \
+  assert(0 == strcmp(requests[REQNUM].query_string, "")); \
+  assert(0 == strcmp(requests[REQNUM].request_method, "POST")); \
+  assert(0 == strcmp(requests[REQNUM].request_path, "/req3")); \
+  assert(1 == requests[REQNUM].request.version_major); \
+  assert(1 == requests[REQNUM].request.version_minor); \
+  assert(1 == requests[REQNUM].num_headers); \
+  assert(0 == strcmp(requests[REQNUM].header_fields[0], "Accept")); \
+  assert(0 == strcmp(requests[REQNUM].header_values[0], "*/*")); 
+  assert_req3(0);
 
   // no content-length
   const char *bad_req1 = "GET /bad_req1/world HTTP/1.1\r\nAccept: */*\r\nHELLO\r\n";
@@ -248,11 +257,18 @@ int main()
   const char *req4 = "GET /req4 HTTP/1.1\r\nconTENT-Length: 5\r\n\r\nHELLO";
   // no error if there is a is body with content length
   assert(!test_error(req4));
-  assert_req_str_eql(0, body, "HELLO");
-  assert(1 == num_requests);
-  assert(1 == requests[0].num_headers);
-  assert_req_str_eql(0, header_fields[0], "conTENT-Length");
-  assert_req_str_eql(0, header_values[0], "5");
+#define assert_req4(REQNUM) \
+  assert(0 == strcmp(requests[REQNUM].body, "HELLO")); \
+  assert(0 == strcmp(requests[REQNUM].fragment, "")); \
+  assert(0 == strcmp(requests[REQNUM].query_string, "")); \
+  assert(0 == strcmp(requests[REQNUM].request_method, "GET")); \
+  assert(0 == strcmp(requests[REQNUM].request_path, "/req4")); \
+  assert(0 == strcmp(requests[REQNUM].request_uri, "/req4")); \
+  assert(1 == requests[REQNUM].request.version_major); \
+  assert(1 == requests[REQNUM].request.version_minor); \
+  assert(1 == requests[REQNUM].num_headers); \
+  assert(0 == strcmp(requests[REQNUM].header_fields[0], "conTENT-Length")); \
+  assert(0 == strcmp(requests[REQNUM].header_values[0], "5")); 
 
   // post - one header - body "World"
   const char *req5 = "POST /req5 HTTP/1.1\r\nAccept: */*\r\nContent-Length: 5\r\n\r\nWorld";
@@ -325,7 +341,7 @@ int main()
   char total[80*1024] = "\0";
 
   strcat(total, req1); 
-  strcat(total, req4); 
+  strcat(total, req2); 
   strcat(total, req3); 
 
   char buf1[80*1024] = "\0";
@@ -351,14 +367,46 @@ int main()
     assert(!ebb_parser_has_error(&parser) );
     assert(ebb_parser_is_finished(&parser) );
 
+    assert(3 == num_requests);
     assert_req1(0);
-    assert_req_str_eql(1, body, "HELLO");
-    assert_req_str_eql(2, body, "");
+    assert_req2(1);
+    assert_req3(2);
   }
-  return 1; 
 
 
+  total[0] = 0;
 
+  strcat(total, req1); 
+  strcat(total, req2); 
+  strcat(total, req4); 
+
+  buf1[0] = '\0';
+  buf2[0] = '\0';
+
+  total_len = strlen(total);
+
+  for(i = 1; i < total_len - 1; i ++ )
+  {
+    parser_init();
+    printf("i: %d\n", i);
+
+    strncpy(buf1, total, i);
+    strncpy(buf2, total+i, total_len - i);
+
+    ebb_parser_execute(&parser, buf1, i);
+
+    assert(!ebb_parser_has_error(&parser) );
+
+    ebb_parser_execute(&parser, buf2, total_len - i);
+
+    assert(!ebb_parser_has_error(&parser) );
+    assert(ebb_parser_is_finished(&parser) );
+
+    assert(3 == num_requests);
+    assert_req1(0);
+    assert_req2(1);
+    assert_req4(2);
+  }
 
 
   printf("okay\n");
