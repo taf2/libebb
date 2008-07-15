@@ -137,23 +137,23 @@ static ebb_element* eip_pop
   }
 
   action content_length {
-    printf("content_length!\n");
+    //printf("content_length!\n");
     CURRENT->content_length *= 10;
     CURRENT->content_length += *p - '0';
   }
 
   action use_identity_encoding {
-    printf("use identity encoding\n");
+    //printf("use identity encoding\n");
     CURRENT->transfer_encoding = EBB_IDENTITY;
   }
 
   action use_chunked_encoding {
-    printf("use chunked encoding\n");
+    //printf("use chunked encoding\n");
     CURRENT->transfer_encoding = EBB_CHUNKED;
   }
 
   action trailer {
-    printf("trailer\n");
+    //printf("trailer\n");
     /* not implemenetd yet. (do requests even have trailing headers?) */
   }
 
@@ -179,7 +179,7 @@ static ebb_element* eip_pop
   }
 
   action add_to_chunk_size {
-    printf("add to chunk size\n");
+    //printf("add to chunk size\n");
     parser->chunk_size *= 16;
     /* XXX: this can be optimized slightly */
     if( 'A' <= *p && *p <= 'F') 
@@ -193,8 +193,8 @@ static ebb_element* eip_pop
   }
 
   action skip_chunk_data {
-    printf("skip chunk data\n");
-    printf("chunk_size: %d\n", parser->chunk_size);
+    //printf("skip chunk data\n");
+    //printf("chunk_size: %d\n", parser->chunk_size);
     if(parser->chunk_size > REMAINING) {
       parser->eating = TRUE;
       parser->chunk_handler(parser->data, p, REMAINING);
@@ -212,7 +212,7 @@ static ebb_element* eip_pop
   }
 
   action end_chunked_body {
-    printf("end chunked body\n");
+    //printf("end chunked body\n");
     if(parser->request_complete)
       parser->request_complete(parser->data);
     fret; // goto Request; 
@@ -267,8 +267,8 @@ static ebb_element* eip_pop
   query = ( uchar | reserved )* >mark %query_string ;
   param = ( pchar | "/" )* ;
   params = ( param ( ";" param )* ) ;
-  rel_path = ( path? (";" params)? ) ("?" query)?;
-  absolute_path = ( "/"+ rel_path ) >mmark %request_path;
+  rel_path = ( path? (";" params)? ) ;
+  absolute_path = ( "/"+ rel_path ) >mmark %request_path ("?" query)?;
   Request_URI = ( "*" | absolute_uri | absolute_path ) >mark %request_uri;
   Fragment = ( uchar | reserved )* >mark %fragment;
   Method = ( upper | digit | safe ){1,20} >mark %request_method;
@@ -317,7 +317,6 @@ static ebb_element* eip_pop
 
   Request = RequestHeader @{
     if(CURRENT->transfer_encoding == EBB_CHUNKED) {
-      printf("\nchunked!\n\n");
       fcall ChunkedBody;
     } else {
       /*
@@ -454,7 +453,7 @@ size_t ebb_parser_execute
      * eat chunked body
      * 
      */
-    printf("eat chunk body (before parse)\n");
+    //printf("eat chunk body (before parse)\n");
     size_t eat = MIN(len, parser->chunk_size);
     if(eat == parser->chunk_size) {
       parser->eating = FALSE;
@@ -471,7 +470,7 @@ size_t ebb_parser_execute
      * eat normal body
      * 
      */
-    printf("eat normal body (before parse)\n");
+    //printf("eat normal body (before parse)\n");
     size_t eat = MIN(len, CURRENT->content_length - CURRENT->body_read);
 
     parser->chunk_handler(parser->data, p, eat);
@@ -616,6 +615,11 @@ ebb_element* new_element ()
 ebb_request* new_request ()
 {
   requests[num_requests].num_headers = 0;
+  requests[num_requests].request_method[0] = 0;
+  requests[num_requests].request_path[0] = 0;
+  requests[num_requests].request_uri[0] = 0;
+  requests[num_requests].fragment[0] = 0;
+  requests[num_requests].query_string[0] = 0;
   requests[num_requests].body[0] = 0;
   ebb_request *r = &requests[num_requests].request ;
   ebb_request_init(r);
@@ -751,30 +755,49 @@ int test_multiple
 
 int main() 
 {
-  // get - no headers - no body
-  const char *req1 = "GET /req1/world HTTP/1.1\r\n\r\n"; 
-
-  // get - one header - no body
-  const char *req2 = "GET /req2 HTTP/1.1\r\nAccept: */*\r\n\r\n"; 
-
-  // post - one header - no body
-  const char *req3 = "POST /req3 HTTP/1.1\r\nAccept: */*\r\n\r\n"; 
-
-  // get - no headers - body "HELLO"
-  const char *req4 = "GET /req4 HTTP/1.1\r\nContent-Length: 5\r\n\r\nHELLO";
-
-  // post - one header - body "World"
-  const char *req5 = "POST /req5 HTTP/1.1\r\nAccept: */*\r\nContent-Length: 5\r\n\r\nWorld";
-
-  // post - no headers - chunked body "all your base are belong to us"
-  const char *req6 = "POST /req6 HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n1e\r\nall your base are belong to us\r\n0\r\n\r\n";
-
-  // no content-length
-  const char *bad_req1 = "GET /bad_req1/world HTTP/1.1\r\nAccept: */*\r\nHELLO\r\n";
 
   assert(test_error("hello world"));
   assert(test_error("GET / HTP/1.1\r\n\r\n"));
 
+
+  // Zed's header tests
+
+
+  const char *dumbfuck = "GET / HTTP/1.1\r\naaaaaaaaaaaaa:++++++++++\r\n\r\n";
+  assert(!test_error(dumbfuck));
+  assert(1 == num_requests);
+  assert_req_str_eql(0, body, "");
+  assert_req_str_eql(0, fragment, "");
+  assert_req_str_eql(0, query_string, "");
+  assert_req_str_eql(0, request_method, "GET");
+  assert_req_str_eql(0, request_path, "/");
+  assert(1 == requests[0].request.version_major);
+  assert(1 == requests[0].request.version_minor);
+  assert(1 == requests[0].num_headers);
+  assert_req_str_eql(0, header_fields[0], "aaaaaaaaaaaaa");
+  assert_req_str_eql(0, header_values[0], "++++++++++");
+
+
+  const char *dumbfuck2 = "GET / HTTP/1.1\r\nX-SSL-Bullshit:   -----BEGIN CERTIFICATE-----\r\n\tMIIFbTCCBFWgAwIBAgICH4cwDQYJKoZIhvcNAQEFBQAwcDELMAkGA1UEBhMCVUsx\r\n\tETAPBgNVBAoTCGVTY2llbmNlMRIwEAYDVQQLEwlBdXRob3JpdHkxCzAJBgNVBAMT\r\n\tAkNBMS0wKwYJKoZIhvcNAQkBFh5jYS1vcGVyYXRvckBncmlkLXN1cHBvcnQuYWMu\r\n\tdWswHhcNMDYwNzI3MTQxMzI4WhcNMDcwNzI3MTQxMzI4WjBbMQswCQYDVQQGEwJV\r\n\tSzERMA8GA1UEChMIZVNjaWVuY2UxEzARBgNVBAsTCk1hbmNoZXN0ZXIxCzAJBgNV\r\n\tBAcTmrsogriqMWLAk1DMRcwFQYDVQQDEw5taWNoYWVsIHBhcmQYJKoZIhvcNAQEB\r\n\tBQADggEPADCCAQoCggEBANPEQBgl1IaKdSS1TbhF3hEXSl72G9J+WC/1R64fAcEF\r\n\tW51rEyFYiIeZGx/BVzwXbeBoNUK41OK65sxGuflMo5gLflbwJtHBRIEKAfVVp3YR\r\n\tgW7cMA/s/XKgL1GEC7rQw8lIZT8RApukCGqOVHSi/F1SiFlPDxuDfmdiNzL31+sL\r\n\t0iwHDdNkGjy5pyBSB8Y79dsSJtCW/iaLB0/n8Sj7HgvvZJ7x0fr+RQjYOUUfrePP\r\n\tu2MSpFyf+9BbC/aXgaZuiCvSR+8Snv3xApQY+fULK/xY8h8Ua51iXoQ5jrgu2SqR\r\n\twgA7BUi3G8LFzMBl8FRCDYGUDy7M6QaHXx1ZWIPWNKsCAwEAAaOCAiQwggIgMAwG\r\n\tA1UdEwEB/wQCMAAwEQYJYIZIAYb4QgEBBAQDAgWgMA4GA1UdDwEB/wQEAwID6DAs\r\n\tBglghkgBhvhCAQ0EHxYdVUsgZS1TY2llbmNlIFVzZXIgQ2VydGlmaWNhdGUwHQYD\r\n\tVR0OBBYEFDTt/sf9PeMaZDHkUIldrDYMNTBZMIGaBgNVHSMEgZIwgY+AFAI4qxGj\r\n\tloCLDdMVKwiljjDastqooXSkcjBwMQswCQYDVQQGEwJVSzERMA8GA1UEChMIZVNj\r\n\taWVuY2UxEjAQBgNVBAsTCUF1dGhvcml0eTELMAkGA1UEAxMCQ0ExLTArBgkqhkiG\r\n\t9w0BCQEWHmNhLW9wZXJhdG9yQGdyaWQtc3VwcG9ydC5hYy51a4IBADApBgNVHRIE\r\n\tIjAggR5jYS1vcGVyYXRvckBncmlkLXN1cHBvcnQuYWMudWswGQYDVR0gBBIwEDAO\r\n\tBgwrBgEEAdkvAQEBAQYwPQYJYIZIAYb4QgEEBDAWLmh0dHA6Ly9jYS5ncmlkLXN1\r\n\tcHBvcnQuYWMudmT4sopwqlBWsvcHViL2NybC9jYWNybC5jcmwwPQYJYIZIAYb4QgEDBDAWLmh0\r\n\tdHA6Ly9jYS5ncmlkLXN1cHBvcnQuYWMudWsvcHViL2NybC9jYWNybC5jcmwwPwYD\r\n\tVR0fBDgwNjA0oDKgMIYuaHR0cDovL2NhLmdyaWQt5hYy51ay9wdWIv\r\n\tY3JsL2NhY3JsLmNybDANBgkqhkiG9w0BAQUFAAOCAQEAS/U4iiooBENGW/Hwmmd3\r\n\tXCy6Zrt08YjKCzGNjorT98g8uGsqYjSxv/hmi0qlnlHs+k/3Iobc3LjS5AMYr5L8\r\n\tUO7OSkgFFlLHQyC9JzPfmLCAugvzEbyv4Olnsr8hbxF1MbKZoQxUZtMVu29wjfXk\r\n\thTeApBv7eaKCWpSp7MCbvgzm74izKhu3vlDk9w6qVrxePfGgpKPqfHiOoGhFnbTK\r\n\twTC6o2xq5y0qZ03JonF7OJspEd3I5zKY3E+ov7/ZhW6DqT8UFvsAdjvQbXyhV8Eu\r\n\tYhixw1aKEPzNjNowuIseVogKOLXxWI5vAi5HgXdS0/ES5gDGsABo4fqovUKlgop3\r\n\tRA==\r\n\t-----END CERTIFICATE-----\r\n\r\n";
+  assert(test_error(dumbfuck2));
+
+
+  const char *fragment_in_uri = "GET /forums/1/topics/2375?page=1#posts-17408 HTTP/1.1\r\n\r\n";
+  assert(!test_error(fragment_in_uri));
+  assert_req_str_eql(0, fragment, "posts-17408");
+  assert_req_str_eql(0, query_string, "page=1");
+  assert_req_str_eql(0, request_method, "GET");
+  printf("request path: %s\n", requests[0].request_path);
+  assert_req_str_eql(0, request_path, "/forums/1/topics/2375");
+  /* XXX request uri does not include fragment? */
+  assert_req_str_eql(0, request_uri, "/forums/1/topics/2375?page=1");
+
+
+  /* TODO sending junk and large headers gets rejected */
+
+
+  // get - no headers - no body
+  const char *req1 = "GET /req1/world HTTP/1.1\r\n\r\n"; 
   assert(!test_error(req1));
   assert(1 == num_requests);
   assert_req_str_eql(0, body, "");
@@ -785,6 +808,25 @@ int main()
   assert(1 == requests[0].request.version_major);
   assert(1 == requests[0].request.version_minor);
   assert(0 == requests[0].num_headers);
+
+  // get - one header - no body
+  const char *req2 = "GET /req2 HTTP/1.1\r\nAccept: */*\r\n\r\n"; 
+
+  // post - one header - no body
+  const char *req3 = "POST /req3 HTTP/1.1\r\nAccept: */*\r\n\r\n"; 
+
+  // get - no headers - body "HELLO"
+  const char *req4 = "GET /req4 HTTP/1.1\r\nconTENT-Length: 5\r\n\r\nHELLO";
+
+  // post - one header - body "World"
+  const char *req5 = "POST /req5 HTTP/1.1\r\nAccept: */*\r\nContent-Length: 5\r\n\r\nWorld";
+
+  // post - no headers - chunked body "all your base are belong to us"
+  const char *req6 = "POST /req6 HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n1e\r\nall your base are belong to us\r\n0\r\n\r\n";
+
+  // no content-length
+  const char *bad_req1 = "GET /bad_req1/world HTTP/1.1\r\nAccept: */*\r\nHELLO\r\n";
+
 
   assert(!test_error(req2));
   assert(1 == num_requests);
@@ -814,7 +856,7 @@ int main()
   assert_req_str_eql(0, body, "HELLO");
   assert(1 == num_requests);
   assert(1 == requests[0].num_headers);
-  assert_req_str_eql(0, header_fields[0], "Content-Length");
+  assert_req_str_eql(0, header_fields[0], "conTENT-Length");
   assert_req_str_eql(0, header_values[0], "5");
 
   assert(!test_error(req5));
@@ -862,6 +904,9 @@ int main()
   assert_req_str_eql(1, body, "all your base are belong to us");
   assert_req_str_eql(2, body, "all your base are belong to us");
   assert(3 == num_requests);
+
+
+
 
   printf("okay\n");
   return 0;
