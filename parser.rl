@@ -15,12 +15,6 @@
 #define CURRENT (parser->current_request)
 #define CONTENT_LENGTH (parser->current_request->content_length)
 
-static void eat_body
-  ( ebb_parser *parser
-  )
-{
-}
-
 #define eip_empty(parser) (parser->eip_stack[0] == NULL)
 
 static void eip_push
@@ -219,6 +213,8 @@ static ebb_element* eip_pop
 
   action end_chunked_body {
     printf("end chunked body\n");
+    if(parser->request_complete)
+      parser->request_complete(parser->data);
     fret; // goto Request; 
   }
 
@@ -288,7 +284,7 @@ static ebb_element* eip_pop
   cl = "Content-Length"i %write_field  head_sep
        digit+ >mark $content_length %write_value;
 
-  te = "Transfer-Encoding"i %write_field head_sep %use_chunked_encoding 
+  te = "Transfer-Encoding"i %write_field %use_chunked_encoding head_sep
        "identity"i >mark %use_identity_encoding %write_value;
 
   t =  "Trailer"i %write_field head_sep
@@ -321,6 +317,7 @@ static ebb_element* eip_pop
 
   Request = RequestHeader @{
     if(CURRENT->transfer_encoding == EBB_CHUNKED) {
+      printf("\nchunked!\n\n");
       fcall ChunkedBody;
     } else {
       /*
@@ -735,8 +732,27 @@ int main()
 
   // two requests with bodies
   assert(!test_error("POST /hello HTTP/1.1\r\nContent-Length: 5\r\n\r\nHelloPOST /world HTTP/1.1\r\nContent-Length: 5\r\n\r\nWorld"));
+  assert(0 == strcmp(requests[0].body, "Hello"));
+  assert(0 == strcmp(requests[1].body, "World"));
   assert(2 == num_requests);
 
+  // three requests with bodies
+  assert(!test_error("POST /hello HTTP/1.1\r\nContent-Length: 5\r\n\r\nHelloPOST /world HTTP/1.1\r\nContent-Length: 5\r\n\r\nWorldGET /hello HTTP/1.1\r\nContent-Length: 5\r\n\r\nShoes"));
+  assert(0 == strcmp(requests[0].body, "Hello"));
+  assert(0 == strcmp(requests[1].body, "World"));
+  assert(0 == strcmp(requests[2].body, "Shoes"));
+  assert(3 == num_requests);
+
+  // chunked body
+  assert(!test_error("POST /hello HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n1e\r\nall your base are belong to us\r\n0\r\n\r\n"));
+  assert(0 == strcmp(requests[0].body, "all your base are belong to us"));
+  assert(1 == num_requests);
+
+  // chunked body and normal body
+  assert(!test_error("POST /hello HTTP/1.1\r\nContent-Length: 5\r\n\r\nHelloPOST /hello HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n1e\r\nall your base are belong to us\r\n0\r\n\r\n"));
+  assert(0 == strcmp(requests[0].body, "Hello"));
+  assert(0 == strcmp(requests[1].body, "all your base are belong to us"));
+  assert(2 == num_requests);
 
   printf("okay\n");
   return 0;
