@@ -13,7 +13,6 @@ typedef void (*element_cb)(void *data, ebb_element *);
 struct ebb_request {
   size_t content_length;
   int transfer_encoding;
-  ebb_request *next;
   size_t body_read;
   unsigned complete:1;
 
@@ -66,14 +65,13 @@ struct ebb_parser {
   ebb_element *eip_stack[3]; 
   ebb_element *header_field_element;
   ebb_request *current_request;
-  ebb_request *first_request;
 };
 
 void ebb_parser_init
   ( ebb_parser *parser
   );
 
-size_t chunked_parser_execute
+size_t ebb_parser_execute
   ( ebb_parser *parser
   , const char *data
   , size_t len
@@ -91,7 +89,7 @@ void ebb_request_init
   ( ebb_request *
   );
 
-int ebb_element_init
+void ebb_element_init
   ( ebb_element *element
   );
 
@@ -101,6 +99,11 @@ ebb_element* ebb_element_last
 
 size_t ebb_element_len
   ( ebb_element *element
+  );
+
+void ebb_element_strcpy
+  ( ebb_element *element
+  , char *dest
   );
 
 void ebb_element_printf

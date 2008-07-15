@@ -36,7 +36,7 @@ ebb_request* new_request ()
   requests[num_requests].fragment[0] = 0;
   requests[num_requests].query_string[0] = 0;
   requests[num_requests].body[0] = 0;
-  ebb_request *r = &requests[num_requests].request ;
+  ebb_request *r = &requests[num_requests].request;
   ebb_request_init(r);
   printf("new request %d\n", num_requests);
   return r;
@@ -101,11 +101,8 @@ void chunk_handler(void *data, const char *p, size_t len)
   printf("chunk_handler: '%s'\n", requests[num_requests].body);
 }
 
-int test_error
-  ( const char *buf
-  )
+void parser_init()
 {
-  size_t traversed = 0;
   num_requests = 0;
 
   ebb_parser_init(&parser);
@@ -120,6 +117,14 @@ int test_error
   parser.fragment = fragment_cb;
   parser.query_string = query_string_cb;
   parser.chunk_handler = chunk_handler;
+}
+
+int test_error
+  ( const char *buf
+  )
+{
+  size_t traversed = 0;
+  parser_init();
 
   traversed = ebb_parser_execute(&parser, buf, strlen(buf));
 
@@ -139,20 +144,7 @@ int test_multiple
   strcat(total, buf3); 
 
   size_t traversed = 0;
-  num_requests = 0;
-
-  ebb_parser_init(&parser);
-
-  parser.new_element = new_element;
-  parser.new_request = new_request;
-  parser.request_complete = request_complete;
-  parser.header_handler = header_handler;
-  parser.request_method = request_method_cb;
-  parser.request_path = request_path_cb;
-  parser.request_uri = request_uri_cb;
-  parser.fragment = fragment_cb;
-  parser.query_string = query_string_cb;
-  parser.chunk_handler = chunk_handler;
+  parser_init();
 
   traversed = ebb_parser_execute(&parser, total, strlen(total));
 
@@ -164,6 +156,8 @@ int test_multiple
 
   return traversed;
 }
+
+#define break_output printf("test_break error.\ni: %d\nbuf1: %s\nbuf2: %s\n", i, buf1, buf2)
 
 #define assert_req_str_eql(num, FIELD, expected)  \
   assert(0 == strcmp(requests[num].FIELD, expected))
@@ -210,30 +204,33 @@ int main()
   const char *req1 = "GET /req1/world HTTP/1.1\r\n\r\n"; 
   assert(!test_error(req1));
   assert(1 == num_requests);
-  assert_req_str_eql(0, body, "");
-  assert_req_str_eql(0, fragment, "");
-  assert_req_str_eql(0, query_string, "");
-  assert_req_str_eql(0, request_method, "GET");
-  assert_req_str_eql(0, request_path, "/req1/world");
-  assert(1 == requests[0].request.version_major);
-  assert(1 == requests[0].request.version_minor);
-  assert(0 == requests[0].num_headers);
+#define assert_req1(REQNUM) \
+  assert(0 == strcmp(requests[REQNUM].body, "")); \
+  assert(0 == strcmp(requests[REQNUM].fragment, "")); \
+  assert(0 == strcmp(requests[REQNUM].query_string, "")); \
+  assert(0 == strcmp(requests[REQNUM].request_method, "GET")); \
+  assert(0 == strcmp(requests[REQNUM].request_path, "/req1/world")); \
+  assert(1 == requests[REQNUM].request.version_major); \
+  assert(1 == requests[REQNUM].request.version_minor); \
+  assert(0 == requests[REQNUM].num_headers);
+  assert_req1(0);
 
   // get - one header - no body
   const char *req2 = "GET /req2 HTTP/1.1\r\nAccept: */*\r\n\r\n"; 
   assert(!test_error(req2));
   assert(1 == num_requests);
-  assert_req_str_eql(0, body, "");
-  assert_req_str_eql(0, fragment, "");
-  assert_req_str_eql(0, query_string, "");
-  assert_req_str_eql(0, request_method, "GET");
-  assert_req_str_eql(0, request_path, "/req2");
-  assert_req_str_eql(0, request_uri, "/req2");
-  assert(1 == requests[0].request.version_major);
-  assert(1 == requests[0].request.version_minor);
-  assert(1 == requests[0].num_headers);
-  assert_req_str_eql(0, header_fields[0], "Accept");
+#define assert_req2(REQNUM) \
+  assert(0 == strcmp(requests[REQNUM].body, "")); \
+  assert(0 == strcmp(requests[REQNUM].fragment, "")); \
+  assert(0 == strcmp(requests[REQNUM].query_string, "")); \
+  assert(0 == strcmp(requests[REQNUM].request_method, "GET")); \
+  assert(0 == strcmp(requests[REQNUM].request_path, "/req2")); \
+  assert(1 == requests[REQNUM].request.version_major); \
+  assert(1 == requests[REQNUM].request.version_minor); \
+  assert(1 == requests[REQNUM].num_headers); \
+  assert_req_str_eql(0, header_fields[0], "Accept"); \
   assert_req_str_eql(0, header_values[0], "*/*");
+  assert_req2(0);
 
   // post - one header - no body
   const char *req3 = "POST /req3 HTTP/1.1\r\nAccept: */*\r\n\r\n"; 
@@ -318,11 +315,50 @@ int main()
   assert(3 == num_requests);
 
   // three chunked requests
-  assert(0 < test_multiple(req6, req6, req6));
-  assert_req_str_eql(0, body, "all your base are belong to us");
+  assert(0 < test_multiple(req7, req6, req8));
+  assert_req_str_eql(0, body, "hello world");
   assert_req_str_eql(1, body, "all your base are belong to us");
-  assert_req_str_eql(2, body, "all your base are belong to us");
+  assert_req_str_eql(2, body, "hello world");
   assert(3 == num_requests);
+
+
+  char total[80*1024] = "\0";
+
+  strcat(total, req1); 
+  strcat(total, req4); 
+  strcat(total, req3); 
+
+  char buf1[80*1024] = "\0";
+  char buf2[80*1024] = "\0";
+
+  int total_len = strlen(total);
+  int i;
+
+  for(i = 1; i < total_len - 1; i ++ )
+  {
+    parser_init();
+    printf("i: %d\n", i);
+
+    strncpy(buf1, total, i);
+    strncpy(buf2, total+i, total_len - i);
+
+    ebb_parser_execute(&parser, buf1, i);
+
+    assert(!ebb_parser_has_error(&parser) );
+
+    ebb_parser_execute(&parser, buf2, total_len - i);
+
+    assert(!ebb_parser_has_error(&parser) );
+    assert(ebb_parser_is_finished(&parser) );
+
+    assert_req1(0);
+    assert_req_str_eql(1, body, "HELLO");
+    assert_req_str_eql(2, body, "");
+  }
+  return 1; 
+
+
+
 
 
   printf("okay\n");

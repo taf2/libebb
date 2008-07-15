@@ -1,15 +1,14 @@
-SOURCES := $(wildcard *.c)
+CC=gcc
 
 test: test_parser
-	./test_parser
 
-objects: parser.o
+objects: parser.o test_parser.o
 
-test_parser: test_parser.c parser.o
-	gcc -g parser.o $< -o $@
+test_parser: test_parser.o parser.o
+	gcc parser.o -g test_parser.o -o $@
 
-%.o: %.o
-	gcc -gc $< -o $@
+%.o: %.c
+	gcc -c $< -o $@ -g -Wall
 
 %.c: %.rl
 	ragel -s -G2 $< -o $@

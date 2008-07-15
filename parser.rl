@@ -1,4 +1,3 @@
-
 #include "parser.h"
 #include <stdio.h>
 #include <assert.h>
@@ -136,6 +135,17 @@ static ebb_element* eip_pop
       eip->free(eip);
   }
 
+  action request_method { 
+    //printf("request method\n");
+    eip = eip_pop(parser);
+    last = ebb_element_last(eip);
+    last->len = p - last->base;
+    if(parser->request_method)
+      parser->request_method(parser->data, eip);
+    if(eip->free)
+      eip->free(eip);
+  }
+
   action content_length {
     //printf("content_length!\n");
     CURRENT->content_length *= 10;
@@ -157,16 +167,6 @@ static ebb_element* eip_pop
     /* not implemenetd yet. (do requests even have trailing headers?) */
   }
 
-
-  action request_method { 
-    //printf("request method\n");
-    eip = eip_pop(parser);
-    eip->len = p - eip->base;  
-    if(parser->request_method)
-      parser->request_method(parser->data, eip);
-    if(eip->free)
-      eip->free(eip);
-  }
 
   action version_major {
     CURRENT->version_major *= 10;
@@ -219,16 +219,7 @@ static ebb_element* eip_pop
   }
 
   action start_req {
-    if(parser->first_request) {
-      for(request = parser->first_request; request->next; request = request->next) {;}
-      request->next = parser->new_request(parser->data);
-      request = request->next;
-      request->next = NULL;
-      CURRENT = request;
-    } else {
-      parser->first_request = parser->new_request(parser->data);
-      CURRENT = parser->first_request;
-    }
+    CURRENT = parser->new_request(parser->data);
   }
 
   action body_logic {
@@ -407,7 +398,6 @@ void ebb_parser_init
 
   parser->eip_stack[0] = NULL;
   parser->current_request = NULL;
-  parser->first_request = NULL;
   parser->header_field_element = NULL;
 
   parser->nread = 0;
@@ -433,7 +423,6 @@ size_t ebb_parser_execute
   )
 {
   ebb_element *eip, *last; 
-  ebb_request *request; 
   const char *p, *pe;
   int i, cs = parser->cs;
 
@@ -534,11 +523,10 @@ void ebb_request_init
   request->version_minor = 0;
   request->transfer_encoding = EBB_IDENTITY;
   request->complete = FALSE;
-  request->next = NULL;
   request->free = NULL;
 }
 
-int ebb_element_init
+void ebb_element_init
   ( ebb_element *element
   ) 
 {
