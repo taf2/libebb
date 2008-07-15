@@ -12,6 +12,14 @@
 # define MIN(a,b) (a < b ? a : b)
 #endif
 #define REMAINING (pe - p)
+#define CURRENT (parser->current_request)
+#define CONTENT_LENGTH (parser->current_request->content_length)
+
+static void eat_body
+  ( ebb_parser *parser
+  )
+{
+}
 
 #define eip_empty(parser) (parser->eip_stack[0] == NULL)
 
@@ -61,7 +69,7 @@ static ebb_element* eip_pop
   }
 
   action write_field { 
-    printf("write_field!\n");
+    //printf("write_field!\n");
     assert(parser->header_field_element == NULL);  
     eip = eip_pop(parser);
     last = ebb_element_last(eip);
@@ -71,7 +79,7 @@ static ebb_element* eip_pop
   }
 
   action write_value {
-    printf("write_value!\n");
+    //printf("write_value!\n");
     assert(parser->header_field_element != NULL);  
 
     eip = eip_pop(parser);
@@ -136,18 +144,18 @@ static ebb_element* eip_pop
 
   action content_length {
     printf("content_length!\n");
-    parser->current_request->content_length *= 10;
-    parser->current_request->content_length += *p - '0';
+    CURRENT->content_length *= 10;
+    CURRENT->content_length += *p - '0';
   }
 
   action use_identity_encoding {
     printf("use identity encoding\n");
-    parser->current_request->transfer_encoding = EBB_IDENTITY;
+    CURRENT->transfer_encoding = EBB_IDENTITY;
   }
 
   action use_chunked_encoding {
     printf("use chunked encoding\n");
-    parser->current_request->transfer_encoding = EBB_CHUNKED;
+    CURRENT->transfer_encoding = EBB_CHUNKED;
   }
 
   action trailer {
@@ -167,13 +175,13 @@ static ebb_element* eip_pop
   }
 
   action version_major {
-    parser->current_request->version_major *= 10;
-    parser->current_request->version_major += *p - '0';
+    CURRENT->version_major *= 10;
+    CURRENT->version_major += *p - '0';
   }
 
   action version_minor {
-    parser->current_request->version_minor *= 10;
-    parser->current_request->version_minor += *p - '0';
+    CURRENT->version_minor *= 10;
+    CURRENT->version_minor += *p - '0';
   }
 
   action add_to_chunk_size {
@@ -194,7 +202,7 @@ static ebb_element* eip_pop
     printf("skip chunk data\n");
     printf("chunk_size: %d\n", parser->chunk_size);
     if(parser->chunk_size > REMAINING) {
-      parser->eating = 1;
+      parser->eating = TRUE;
       parser->chunk_handler(parser->data, p, REMAINING);
       parser->chunk_size -= REMAINING;
       fhold; 
@@ -203,7 +211,7 @@ static ebb_element* eip_pop
       parser->chunk_handler(parser->data, p, parser->chunk_size);
       p += parser->chunk_size;
       parser->chunk_size = 0;
-      parser->eating = 0;
+      parser->eating = FALSE;
       fhold; 
       fgoto chunk_end; 
     }
@@ -211,38 +219,7 @@ static ebb_element* eip_pop
 
   action end_chunked_body {
     printf("end chunked body\n");
-    fgoto Request; 
-  }
-
-  action parse_body { 
-    printf("got to parse body\n");
-    if(!eip_empty(parser))
-      printf("still on stack: '%s'\n", parser->eip_stack[0]->base);
-    assert( eip_empty(parser) && "stack must be empty when at body");
-
-    if(parser->current_request->transfer_encoding == EBB_CHUNKED) {
-      fhold; 
-      fgoto Chunked_Body;
-
-    } else if(parser->current_request->content_length > 0) { 
-      parser->chunk_size = parser->current_request->content_length;
-
-      /* skip content-length bytes */
-      if(parser->chunk_size > REMAINING) {
-        parser->eating = TRUE;
-        parser->chunk_handler(parser->data, p, REMAINING);
-        parser->chunk_size -= REMAINING;
-        fhold; 
-        fbreak;
-      } else {
-        parser->chunk_handler(parser->data, p, parser->chunk_size);
-        p += parser->chunk_size;
-        parser->chunk_size = 0;
-        parser->eating = FALSE;
-        fhold; 
-        fgoto Request; 
-      }
-    }
+    fret; // goto Request; 
   }
 
   action start_req {
@@ -251,17 +228,11 @@ static ebb_element* eip_pop
       request->next = parser->new_request(parser->data);
       request = request->next;
       request->next = NULL;
+      CURRENT = request;
     } else {
       parser->first_request = parser->new_request(parser->data);
-      parser->current_request = parser->first_request;
+      CURRENT = parser->first_request;
     }
-  }
-
-  action end_req {
-    printf("end request\n");
-    if(parser->request_complete)
-      parser->request_complete(parser->data);
-    parser->current_request->complete = TRUE;
   }
 
 #
@@ -297,28 +268,28 @@ static ebb_element* eip_pop
   scheme = ( alpha | digit | "+" | "-" | "." )* ;
   absolute_uri = (scheme ":" (uchar | reserved )*);
   path = ( pchar+ ( "/" pchar* )* ) ;
-  query = ( uchar | reserved )* >mark >{printf("mark query\n");} %query_string ;
+  query = ( uchar | reserved )* >mark %query_string ;
   param = ( pchar | "/" )* ;
   params = ( param ( ";" param )* ) ;
   rel_path = ( path? (";" params)? ) ("?" query)?;
-  absolute_path = ( "/"+ rel_path ) >mmark >{printf("mark abspath\n");} %request_path;
-  Request_URI = ( "*" | absolute_uri | absolute_path ) >mark >{printf("mark uri\n");} %request_uri;
-  Fragment = ( uchar | reserved )* >mark >{printf("mark fragment\n");} %fragment;
-  Method = ( upper | digit | safe ){1,20} >mark >{printf("mark method\n");} %request_method;
+  absolute_path = ( "/"+ rel_path ) >mmark %request_path;
+  Request_URI = ( "*" | absolute_uri | absolute_path ) >mark %request_uri;
+  Fragment = ( uchar | reserved )* >mark %fragment;
+  Method = ( upper | digit | safe ){1,20} >mark %request_method;
   http_number = (digit+ $version_major "." digit+ $version_minor);
   HTTP_Version = ( "HTTP/" http_number );
 
   field_name = ( token -- ":" )+ %write_field;
-  field_value = ((any - " ") any*)? >mark >{printf("mark value\n");} %write_value;
+  field_value = ((any - " ") any*)? >mark %write_value;
 
   head_sep = ":" " "**;
   message_header = field_name head_sep field_value :> CRLF;
 
   cl = "Content-Length"i %write_field  head_sep
-       digit+ >mark >{printf("mark cl value\n");} $content_length %write_value;
+       digit+ >mark $content_length %write_value;
 
-  te = "Transfer-Encoding"i %write_field head_sep %use_identity_encoding 
-       "identity"i >mark >{printf("mark identity\n");} %use_chunked_encoding %write_value;
+  te = "Transfer-Encoding"i %write_field head_sep %use_chunked_encoding 
+       "identity"i >mark %use_identity_encoding %write_value;
 
   t =  "Trailer"i %write_field head_sep
         field_value %trailer;
@@ -332,7 +303,7 @@ static ebb_element* eip_pop
           ;
 
   Request_Line = ( Method " " Request_URI ("#" Fragment)? " " HTTP_Version CRLF ) ;
-  RequestHeader = Request_Line (header >mark >{printf("mark headbeg\n");} :> CRLF)* :> CRLF;
+  RequestHeader = Request_Line (header >mark :> CRLF)* :> CRLF;
 
 # chunked message
   trailing_headers = message_header*;
@@ -346,25 +317,97 @@ static ebb_element* eip_pop
   chunk_body = any >skip_chunk_data;
   chunk_begin = chunk_size chunk_extension CRLF;
   chunk = chunk_begin chunk_body chunk_end;
-  Chunked_Body := chunk* last_chunk trailing_headers CRLF @end_chunked_body zlen;
+  ChunkedBody := chunk* last_chunk trailing_headers CRLF @end_chunked_body;
 
-  Request = (RequestHeader @parse_body zlen) >start_req @end_req;
+  Request = RequestHeader @{
+    if(CURRENT->transfer_encoding == EBB_CHUNKED) {
+      fcall ChunkedBody;
+    } else {
+      /*
+       * EAT BODY
+       * this is very ugly. sorry.
+       *
+       */
+      if( CURRENT->content_length == 0) {
+
+        if( parser->request_complete )
+          parser->request_complete(parser->data);
+
+
+      } else if( CURRENT->content_length < REMAINING ) {
+        /* 
+         * 
+         * FINISH EATING THE BODY. there is still more 
+         * on the buffer - so we just let it continue
+         * parsing after we're done
+         *
+         */
+        p += 1;
+        if( parser->chunk_handler )
+          parser->chunk_handler(parser->data, p, CURRENT->content_length); 
+
+        p += CURRENT->content_length;
+        CURRENT->body_read = CURRENT->content_length;
+
+        assert(0 <= REMAINING);
+
+        if( parser->request_complete )
+          parser->request_complete(parser->data);
+
+        fhold;
+
+      } else {
+        /* 
+         * The body is larger than the buffer
+         * EAT REST OF BUFFER
+         * there is still more to read though. this will  
+         * be handled on the next invokion of ebb_parser_execute
+         * right before we enter the state machine. 
+         *
+         */
+        p += 1;
+        size_t eat = REMAINING;
+
+        if( parser->chunk_handler )
+          parser->chunk_handler(parser->data, p, eat); 
+
+        p += eat;
+        CURRENT->body_read += eat;
+
+        assert(CURRENT->body_read < CURRENT->content_length);
+        assert(REMAINING == 0);
+        
+        fhold; fbreak;  
+      }
+    }
+  };
+
   
 # sequence of requests (for keep-alive)
-  main := Request+;
+  main := (Request >start_req)+;
 }%%
 
 %% write data;
+
+#define COPYSTACK(dest, src)  for(i = 0; i < PARSER_STACK_SIZE; i++) { dest[i] = src[i]; }
 
 void ebb_parser_init
   ( ebb_parser *parser
   ) 
 {
+  int i;
+
   int cs = 0;
+  int top = 0;
+  int stack[PARSER_STACK_SIZE];
   %% write init;
   parser->cs = cs;
+  parser->top = top;
+  COPYSTACK(parser->stack, stack);
+
   parser->chunk_size = 0;
   parser->eating = 0;
+  
 
   parser->eip_stack[0] = NULL;
   parser->current_request = NULL;
@@ -398,6 +441,10 @@ size_t ebb_parser_execute
   const char *p, *pe;
   int i, cs = parser->cs;
 
+  int top = parser->top;
+  int stack[PARSER_STACK_SIZE];
+  COPYSTACK(stack, parser->stack);
+
   assert(parser->new_element && "undefined callback");
   assert(parser->new_request && "undefined callback");
 
@@ -405,6 +452,12 @@ size_t ebb_parser_execute
   pe = buffer+len;
 
   if(0 < parser->chunk_size && parser->eating) {
+    /*
+     *
+     * eat chunked body
+     * 
+     */
+    printf("eat chunk body (before parse)\n");
     size_t eat = MIN(len, parser->chunk_size);
     if(eat == parser->chunk_size) {
       parser->eating = FALSE;
@@ -413,7 +466,28 @@ size_t ebb_parser_execute
     p += eat;
     parser->chunk_size -= eat;
     //printf("eat: %d\n", eat);
+  } else if( parser->current_request && 
+             CURRENT->content_length > 0 && 
+             CURRENT->body_read > 0) {
+    /*
+     *
+     * eat normal body
+     * 
+     */
+    printf("eat normal body (before parse)\n");
+    size_t eat = MIN(len, CURRENT->content_length - CURRENT->body_read);
+
+    parser->chunk_handler(parser->data, p, eat);
+    p += eat;
+    CURRENT->body_read += eat;
+
+    if(CURRENT->body_read == CURRENT->content_length)
+      if(parser->request_complete)
+        parser->request_complete(parser->data);
+
   }
+
+
 
   /* each on the eip stack gets expanded */
   for(i = 0; parser->eip_stack[i] != NULL; i++) {
@@ -425,6 +499,9 @@ size_t ebb_parser_execute
   %% write exec;
 
   parser->cs = cs;
+  parser->top = top;
+  COPYSTACK(parser->stack, stack);
+
   parser->nread += p - buffer;
 
   /* each on the eip stack gets len */
@@ -574,7 +651,7 @@ void fragment_cb(void *data, ebb_element *el)
 void http_field_cb(void *data, ebb_element *field, ebb_element *value)
 {
   ebb_element_printf(field, "field: %s\n");
-  ebb_element_printf(value, "value: %s\n\n");
+  ebb_element_printf(value, "value: %s\n");
 }
 
 
@@ -645,11 +722,21 @@ int main()
   assert(1 == requests[0].request.version_minor);
 
   // error if there is a body without content length
-  assert(test_error("GET /hello/world HTTP/1.1\r\nAccept: */*\r\nHello\r\n"));
+  assert(test_error("GET /hello/world HTTP/1.1\r\nAccept: */*\r\nHELLO\r\n"));
 
   // no error if there is a is body with content length
-  assert(test_error("GET /hello/world HTTP/1.1\r\nAccept: */*\r\nContent-Length: 5\r\n\r\nHello"));
-  assert(0 == strcmp(requests[0].body, "Hello"));
+  assert(!test_error("GET / HTTP/1.1\r\nContent-Length: 5\r\n\r\nHELLO"));
+  assert(0 == strcmp(requests[0].body, "HELLO"));
+
+
+  // two requests
+  assert(!test_error("GET /hello HTTP/1.1\r\n\r\nGET /world HTTP/1.1\r\n\r\n"));
+  assert(2 == num_requests);
+
+  // two requests with bodies
+  assert(!test_error("POST /hello HTTP/1.1\r\nContent-Length: 5\r\n\r\nHelloPOST /world HTTP/1.1\r\nContent-Length: 5\r\n\r\nWorld"));
+  assert(2 == num_requests);
+
 
   printf("okay\n");
   return 0;

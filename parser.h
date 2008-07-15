@@ -14,6 +14,7 @@ struct ebb_request {
   size_t content_length;
   int transfer_encoding;
   ebb_request *next;
+  size_t body_read;
   unsigned complete:1;
 
   unsigned int version_major;
@@ -51,6 +52,9 @@ struct ebb_parser {
 
 /* PRIVATE */
   int cs;
+#define PARSER_STACK_SIZE 10
+  int stack[PARSER_STACK_SIZE];
+  int top;
   size_t nread;
 
   size_t chunk_size;
