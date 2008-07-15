@@ -14,6 +14,7 @@ struct ebb_request {
   size_t content_length;
   int transfer_encoding;
   size_t body_read;
+  int eating_body;
   unsigned complete:1;
 
   unsigned int version_major;

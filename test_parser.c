@@ -377,8 +377,8 @@ int main()
   total[0] = 0;
 
   strcat(total, req1); 
-  strcat(total, req2); 
   strcat(total, req4); 
+  strcat(total, req2); 
 
   buf1[0] = '\0';
   buf2[0] = '\0';
@@ -391,7 +391,10 @@ int main()
     printf("i: %d\n", i);
 
     strncpy(buf1, total, i);
+    buf1[i] = 0;
     strncpy(buf2, total+i, total_len - i);
+    buf2[total_len - i] = 0;
+
 
     ebb_parser_execute(&parser, buf1, i);
 
@@ -404,8 +407,8 @@ int main()
 
     assert(3 == num_requests);
     assert_req1(0);
-    assert_req2(1);
-    assert_req4(2);
+    assert_req4(1);
+    assert_req2(2);
   }
 
 

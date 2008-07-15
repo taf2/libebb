@@ -271,11 +271,13 @@ static ebb_element* eip_pop
         p += 1;
         size_t eat = REMAINING;
 
-        if( parser->chunk_handler )
+        if( parser->chunk_handler && eat > 0)
           parser->chunk_handler(parser->data, p, eat); 
 
         p += eat;
         CURRENT->body_read += eat;
+        CURRENT->eating_body = TRUE;
+        printf("eating body!\n");
 
         assert(CURRENT->body_read < CURRENT->content_length);
         assert(REMAINING == 0);
@@ -452,8 +454,7 @@ size_t ebb_parser_execute
     parser->chunk_size -= eat;
     //printf("eat: %d\n", eat);
   } else if( parser->current_request && 
-             CURRENT->content_length > 0 && 
-             CURRENT->body_read > 0) {
+             CURRENT->eating_body ) {
     /*
      *
      * eat normal body
@@ -466,10 +467,11 @@ size_t ebb_parser_execute
     p += eat;
     CURRENT->body_read += eat;
 
-    if(CURRENT->body_read == CURRENT->content_length)
+    if(CURRENT->body_read == CURRENT->content_length) {
       if(parser->request_complete)
         parser->request_complete(parser->data);
-
+      CURRENT->eating_body = FALSE;
+    }
   }
 
 
@@ -518,6 +520,7 @@ void ebb_request_init
   ( ebb_request *request
   )
 {
+  request->eating_body = 0;
   request->body_read = 0;
   request->content_length = 0;
   request->version_major = 0;
