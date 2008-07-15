@@ -231,91 +231,7 @@ static ebb_element* eip_pop
     }
   }
 
-#
-##
-###
-#### HTTP/1.1 STATE MACHINE
-###
-##   RequestHeaders and character types are from
-#    Zed Shaw's beautiful Mongrel parser.
-
-  CRLF = "\r\n";
-
-# character types
-  CTL = (cntrl | 127);
-  safe = ("$" | "-" | "_" | ".");
-  extra = ("!" | "*" | "'" | "(" | ")" | ",");
-  reserved = (";" | "/" | "?" | ":" | "@" | "&" | "=" | "+");
-  unsafe = (CTL | " " | "\"" | "#" | "%" | "<" | ">");
-  national = any -- (alpha | digit | reserved | extra | safe | unsafe);
-  unreserved = (alpha | digit | safe | extra | national);
-  escape = ("%" xdigit xdigit);
-  uchar = (unreserved | escape);
-  pchar = (uchar | ":" | "@" | "&" | "=" | "+");
-  tspecials = ("(" | ")" | "<" | ">" | "@" | "," | ";" | ":" | "\\" | "\"" | "/" | "[" | "]" | "?" | "=" | "{" | "}" | " " | "\t");
-
-# elements
-  token = (ascii -- (CTL | tspecials));
-#  qdtext = token -- "\""; 
-#  quoted_pair = "\" ascii;
-#  quoted_string = "\"" (qdtext | quoted_pair )* "\"";
-
-#  headers
-  scheme = ( alpha | digit | "+" | "-" | "." )* ;
-  absolute_uri = (scheme ":" (uchar | reserved )*);
-  path = ( pchar+ ( "/" pchar* )* ) ;
-  query = ( uchar | reserved )* >mark %query_string ;
-  param = ( pchar | "/" )* ;
-  params = ( param ( ";" param )* ) ;
-  rel_path = ( path? (";" params)? ) ;
-  absolute_path = ( "/"+ rel_path ) >mmark %request_path ("?" query)?;
-  Request_URI = ( "*" | absolute_uri | absolute_path ) >mark %request_uri;
-  Fragment = ( uchar | reserved )* >mark %fragment;
-  Method = ( upper | digit | safe ){1,20} >mark %request_method;
-  http_number = (digit+ $version_major "." digit+ $version_minor);
-  HTTP_Version = ( "HTTP/" http_number );
-
-  field_name = ( token -- ":" )+ %write_field;
-  field_value = ((any - " ") any*)? >mark %write_value;
-
-  head_sep = ":" " "**;
-  message_header = field_name head_sep field_value :> CRLF;
-
-  cl = "Content-Length"i %write_field  head_sep
-       digit+ >mark $content_length %write_value;
-
-  te = "Transfer-Encoding"i %write_field %use_chunked_encoding head_sep
-       "identity"i >mark %use_identity_encoding %write_value;
-
-  t =  "Trailer"i %write_field head_sep
-        field_value %trailer;
-
-  rest = (field_name head_sep field_value);
-
-  header  = cl     @(headers,4)
-          | te     @(headers,4)
-          | t      @(headers,4)
-          | rest   @(headers,1)
-          ;
-
-  Request_Line = ( Method " " Request_URI ("#" Fragment)? " " HTTP_Version CRLF ) ;
-  RequestHeader = Request_Line (header >mark :> CRLF)* :> CRLF;
-
-# chunked message
-  trailing_headers = message_header*;
-  #chunk_ext_val   = token | quoted_string;
-  chunk_ext_val = token*;
-  chunk_ext_name = token*;
-  chunk_extension = ( ";" " "* chunk_ext_name ("=" chunk_ext_val)? )*;
-  last_chunk = "0"+ chunk_extension CRLF;
-  chunk_size = (xdigit* [1-9a-fA-F] xdigit*) $add_to_chunk_size;
-  chunk_end  = CRLF;
-  chunk_body = any >skip_chunk_data;
-  chunk_begin = chunk_size chunk_extension CRLF;
-  chunk = chunk_begin chunk_body chunk_end;
-  ChunkedBody := chunk* last_chunk trailing_headers CRLF @end_chunked_body;
-
-  Request = RequestHeader @{
+  action body_logic {
     if(CURRENT->transfer_encoding == EBB_CHUNKED) {
       fcall ChunkedBody;
     } else {
@@ -376,11 +292,95 @@ static ebb_element* eip_pop
         fhold; fbreak;  
       }
     }
-  };
+  }
 
-  
-# sequence of requests (for keep-alive)
-  main := (Request >start_req)+;
+#
+##
+###
+#### HTTP/1.1 STATE MACHINE
+###
+##   RequestHeaders and character types are from
+#    Zed Shaw's beautiful Mongrel parser.
+
+  CRLF = "\r\n";
+
+# character types
+  CTL = (cntrl | 127);
+  safe = ("$" | "-" | "_" | ".");
+  extra = ("!" | "*" | "'" | "(" | ")" | ",");
+  reserved = (";" | "/" | "?" | ":" | "@" | "&" | "=" | "+");
+  unsafe = (CTL | " " | "\"" | "#" | "%" | "<" | ">");
+  national = any -- (alpha | digit | reserved | extra | safe | unsafe);
+  unreserved = (alpha | digit | safe | extra | national);
+  escape = ("%" xdigit xdigit);
+  uchar = (unreserved | escape);
+  pchar = (uchar | ":" | "@" | "&" | "=" | "+");
+  tspecials = ("(" | ")" | "<" | ">" | "@" | "," | ";" | ":" | "\\" | "\"" | "/" | "[" | "]" | "?" | "=" | "{" | "}" | " " | "\t");
+
+# elements
+  token = (ascii -- (CTL | tspecials));
+#  qdtext = token -- "\""; 
+#  quoted_pair = "\" ascii;
+#  quoted_string = "\"" (qdtext | quoted_pair )* "\"";
+
+#  headers
+  scheme = ( alpha | digit | "+" | "-" | "." )* ;
+  absolute_uri = (scheme ":" (uchar | reserved )*);
+  path = ( pchar+ ( "/" pchar* )* ) ;
+  query = ( uchar | reserved )* >mark %query_string ;
+  param = ( pchar | "/" )* ;
+  params = ( param ( ";" param )* ) ;
+  rel_path = ( path? (";" params)? ) ;
+  absolute_path = ( "/"+ rel_path ) >mmark %request_path ("?" query)?;
+  Request_URI = ( "*" | absolute_uri | absolute_path ) >mark %request_uri;
+  Fragment = ( uchar | reserved )* >mark %fragment;
+  Method = ( upper | digit | safe ){1,20} >mark %request_method;
+  http_number = (digit+ $version_major "." digit+ $version_minor);
+  HTTP_Version = ( "HTTP/" http_number );
+
+  field_name = ( token -- ":" )+;
+  field_value = ((any - " ") any*)?;
+
+  head_sep = ":" " "**;
+  message_header = field_name head_sep field_value :> CRLF;
+
+  cl = "Content-Length"i %write_field  head_sep
+       digit+ >mark $content_length %write_value;
+
+  te = "Transfer-Encoding"i %write_field %use_chunked_encoding head_sep
+       "identity"i >mark %use_identity_encoding %write_value;
+
+  t =  "Trailer"i %write_field head_sep
+        field_value >mark %trailer %write_value;
+
+  rest = (field_name %write_field head_sep field_value >mark %write_value);
+
+  header  = cl     @(headers,4)
+          | te     @(headers,4)
+          | t      @(headers,4)
+          | rest   @(headers,1)
+          ;
+
+  Request_Line = ( Method " " Request_URI ("#" Fragment)? " " HTTP_Version CRLF ) ;
+  RequestHeader = Request_Line (header >mark :> CRLF)* :> CRLF;
+
+# chunked message
+  trailing_headers = message_header*;
+  #chunk_ext_val   = token | quoted_string;
+  chunk_ext_val = token*;
+  chunk_ext_name = token*;
+  chunk_extension = ( ";" " "* chunk_ext_name ("=" chunk_ext_val)? )*;
+  last_chunk = "0"+ chunk_extension CRLF;
+  chunk_size = (xdigit* [1-9a-fA-F] xdigit*) $add_to_chunk_size;
+  chunk_end  = CRLF;
+  chunk_body = any >skip_chunk_data;
+  chunk_begin = chunk_size chunk_extension CRLF;
+  chunk = chunk_begin chunk_body chunk_end;
+  ChunkedBody := chunk* last_chunk trailing_headers CRLF @end_chunked_body;
+
+  Request = RequestHeader >start_req @body_logic;
+
+  main := Request+; # sequence of requests (for keep-alive)
 }%%
 
 %% write data;
@@ -755,13 +755,10 @@ int test_multiple
 
 int main() 
 {
-
   assert(test_error("hello world"));
   assert(test_error("GET / HTP/1.1\r\n\r\n"));
 
-
   // Zed's header tests
-
 
   const char *dumbfuck = "GET / HTTP/1.1\r\naaaaaaaaaaaaa:++++++++++\r\n\r\n";
   assert(!test_error(dumbfuck));
@@ -777,10 +774,8 @@ int main()
   assert_req_str_eql(0, header_fields[0], "aaaaaaaaaaaaa");
   assert_req_str_eql(0, header_values[0], "++++++++++");
 
-
   const char *dumbfuck2 = "GET / HTTP/1.1\r\nX-SSL-Bullshit:   -----BEGIN CERTIFICATE-----\r\n\tMIIFbTCCBFWgAwIBAgICH4cwDQYJKoZIhvcNAQEFBQAwcDELMAkGA1UEBhMCVUsx\r\n\tETAPBgNVBAoTCGVTY2llbmNlMRIwEAYDVQQLEwlBdXRob3JpdHkxCzAJBgNVBAMT\r\n\tAkNBMS0wKwYJKoZIhvcNAQkBFh5jYS1vcGVyYXRvckBncmlkLXN1cHBvcnQuYWMu\r\n\tdWswHhcNMDYwNzI3MTQxMzI4WhcNMDcwNzI3MTQxMzI4WjBbMQswCQYDVQQGEwJV\r\n\tSzERMA8GA1UEChMIZVNjaWVuY2UxEzARBgNVBAsTCk1hbmNoZXN0ZXIxCzAJBgNV\r\n\tBAcTmrsogriqMWLAk1DMRcwFQYDVQQDEw5taWNoYWVsIHBhcmQYJKoZIhvcNAQEB\r\n\tBQADggEPADCCAQoCggEBANPEQBgl1IaKdSS1TbhF3hEXSl72G9J+WC/1R64fAcEF\r\n\tW51rEyFYiIeZGx/BVzwXbeBoNUK41OK65sxGuflMo5gLflbwJtHBRIEKAfVVp3YR\r\n\tgW7cMA/s/XKgL1GEC7rQw8lIZT8RApukCGqOVHSi/F1SiFlPDxuDfmdiNzL31+sL\r\n\t0iwHDdNkGjy5pyBSB8Y79dsSJtCW/iaLB0/n8Sj7HgvvZJ7x0fr+RQjYOUUfrePP\r\n\tu2MSpFyf+9BbC/aXgaZuiCvSR+8Snv3xApQY+fULK/xY8h8Ua51iXoQ5jrgu2SqR\r\n\twgA7BUi3G8LFzMBl8FRCDYGUDy7M6QaHXx1ZWIPWNKsCAwEAAaOCAiQwggIgMAwG\r\n\tA1UdEwEB/wQCMAAwEQYJYIZIAYb4QgEBBAQDAgWgMA4GA1UdDwEB/wQEAwID6DAs\r\n\tBglghkgBhvhCAQ0EHxYdVUsgZS1TY2llbmNlIFVzZXIgQ2VydGlmaWNhdGUwHQYD\r\n\tVR0OBBYEFDTt/sf9PeMaZDHkUIldrDYMNTBZMIGaBgNVHSMEgZIwgY+AFAI4qxGj\r\n\tloCLDdMVKwiljjDastqooXSkcjBwMQswCQYDVQQGEwJVSzERMA8GA1UEChMIZVNj\r\n\taWVuY2UxEjAQBgNVBAsTCUF1dGhvcml0eTELMAkGA1UEAxMCQ0ExLTArBgkqhkiG\r\n\t9w0BCQEWHmNhLW9wZXJhdG9yQGdyaWQtc3VwcG9ydC5hYy51a4IBADApBgNVHRIE\r\n\tIjAggR5jYS1vcGVyYXRvckBncmlkLXN1cHBvcnQuYWMudWswGQYDVR0gBBIwEDAO\r\n\tBgwrBgEEAdkvAQEBAQYwPQYJYIZIAYb4QgEEBDAWLmh0dHA6Ly9jYS5ncmlkLXN1\r\n\tcHBvcnQuYWMudmT4sopwqlBWsvcHViL2NybC9jYWNybC5jcmwwPQYJYIZIAYb4QgEDBDAWLmh0\r\n\tdHA6Ly9jYS5ncmlkLXN1cHBvcnQuYWMudWsvcHViL2NybC9jYWNybC5jcmwwPwYD\r\n\tVR0fBDgwNjA0oDKgMIYuaHR0cDovL2NhLmdyaWQt5hYy51ay9wdWIv\r\n\tY3JsL2NhY3JsLmNybDANBgkqhkiG9w0BAQUFAAOCAQEAS/U4iiooBENGW/Hwmmd3\r\n\tXCy6Zrt08YjKCzGNjorT98g8uGsqYjSxv/hmi0qlnlHs+k/3Iobc3LjS5AMYr5L8\r\n\tUO7OSkgFFlLHQyC9JzPfmLCAugvzEbyv4Olnsr8hbxF1MbKZoQxUZtMVu29wjfXk\r\n\thTeApBv7eaKCWpSp7MCbvgzm74izKhu3vlDk9w6qVrxePfGgpKPqfHiOoGhFnbTK\r\n\twTC6o2xq5y0qZ03JonF7OJspEd3I5zKY3E+ov7/ZhW6DqT8UFvsAdjvQbXyhV8Eu\r\n\tYhixw1aKEPzNjNowuIseVogKOLXxWI5vAi5HgXdS0/ES5gDGsABo4fqovUKlgop3\r\n\tRA==\r\n\t-----END CERTIFICATE-----\r\n\r\n";
   assert(test_error(dumbfuck2));
-
 
   const char *fragment_in_uri = "GET /forums/1/topics/2375?page=1#posts-17408 HTTP/1.1\r\n\r\n";
   assert(!test_error(fragment_in_uri));
@@ -811,23 +806,6 @@ int main()
 
   // get - one header - no body
   const char *req2 = "GET /req2 HTTP/1.1\r\nAccept: */*\r\n\r\n"; 
-
-  // post - one header - no body
-  const char *req3 = "POST /req3 HTTP/1.1\r\nAccept: */*\r\n\r\n"; 
-
-  // get - no headers - body "HELLO"
-  const char *req4 = "GET /req4 HTTP/1.1\r\nconTENT-Length: 5\r\n\r\nHELLO";
-
-  // post - one header - body "World"
-  const char *req5 = "POST /req5 HTTP/1.1\r\nAccept: */*\r\nContent-Length: 5\r\n\r\nWorld";
-
-  // post - no headers - chunked body "all your base are belong to us"
-  const char *req6 = "POST /req6 HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n1e\r\nall your base are belong to us\r\n0\r\n\r\n";
-
-  // no content-length
-  const char *bad_req1 = "GET /bad_req1/world HTTP/1.1\r\nAccept: */*\r\nHELLO\r\n";
-
-
   assert(!test_error(req2));
   assert(1 == num_requests);
   assert_req_str_eql(0, body, "");
@@ -842,15 +820,20 @@ int main()
   assert_req_str_eql(0, header_fields[0], "Accept");
   assert_req_str_eql(0, header_values[0], "*/*");
 
+  // post - one header - no body
+  const char *req3 = "POST /req3 HTTP/1.1\r\nAccept: */*\r\n\r\n"; 
   assert(!test_error(req3));
   assert_req_str_eql(0, body, "");
   assert(1 == requests[0].num_headers);
   assert_req_str_eql(0, header_fields[0], "Accept");
   assert_req_str_eql(0, header_values[0], "*/*");
 
-  // error if there is a body without content length
-  assert(test_error(bad_req1));
+  // no content-length
+  const char *bad_req1 = "GET /bad_req1/world HTTP/1.1\r\nAccept: */*\r\nHELLO\r\n";
+  assert(test_error(bad_req1)); // error if there is a body without content length
 
+  // get - no headers - body "HELLO"
+  const char *req4 = "GET /req4 HTTP/1.1\r\nconTENT-Length: 5\r\n\r\nHELLO";
   // no error if there is a is body with content length
   assert(!test_error(req4));
   assert_req_str_eql(0, body, "HELLO");
@@ -859,6 +842,8 @@ int main()
   assert_req_str_eql(0, header_fields[0], "conTENT-Length");
   assert_req_str_eql(0, header_values[0], "5");
 
+  // post - one header - body "World"
+  const char *req5 = "POST /req5 HTTP/1.1\r\nAccept: */*\r\nContent-Length: 5\r\n\r\nWorld";
   assert(!test_error(req5));
   assert_req_str_eql(0, body, "World");
   assert(2 == requests[0].num_headers);
@@ -867,7 +852,8 @@ int main()
   assert_req_str_eql(0, header_fields[1], "Content-Length");
   assert_req_str_eql(0, header_values[1], "5");
 
-  // chunked body
+  // post - no headers - chunked body "all your base are belong to us"
+  const char *req6 = "POST /req6 HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n1e\r\nall your base are belong to us\r\n0\r\n\r\n";
   assert(!test_error(req6));
   assert_req_str_eql(0, fragment, "");
   assert_req_str_eql(0, query_string, "");
@@ -879,6 +865,25 @@ int main()
   assert_req_str_eql(0, header_fields[0], "Transfer-Encoding");
   assert_req_str_eql(0, header_values[0], "chunked");
 
+  // two chunks ; triple zero ending
+  const char *req7 = "POST /req7 HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n000\r\n\r\n"; 
+  assert(!test_error(req7));
+  assert_req_str_eql(0, request_path, "/req7");
+  assert_req_str_eql(0, body, "hello world");
+
+  // chunked with trailing headers. blech.
+  const char *req8 = "POST /req8 HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n0\r\nVary: *\r\nContent-Type: text/plain\r\n\r\n"; 
+  assert(!test_error(req8));
+  assert_req_str_eql(0, request_path, "/req8");
+  assert_req_str_eql(0, body, "hello world");
+
+  // with bullshit after the length
+  const char *req9 = "POST /req9 HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5; ihatew3;whatthefuck=aretheseparametersfor\r\nhello\r\n6; blahblah; blah\r\n world\r\n0\r\n\r\n";
+  assert(!test_error(req9));
+  assert_req_str_eql(0, body, "hello world");
+
+
+
   // three requests - no bodies
   assert(0 < test_multiple(req1, req2, req3));
   assert(3 == num_requests);
@@ -889,7 +894,6 @@ int main()
   assert_req_str_eql(0, body, "");
   assert_req_str_eql(1, body, "HELLO");
   assert_req_str_eql(2, body, "");
-
 
   // three requests with bodies -- last is chunked
   assert(0 < test_multiple(req4, req5, req6));
@@ -904,8 +908,6 @@ int main()
   assert_req_str_eql(1, body, "all your base are belong to us");
   assert_req_str_eql(2, body, "all your base are belong to us");
   assert(3 == num_requests);
-
-
 
 
   printf("okay\n");
