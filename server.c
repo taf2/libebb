@@ -1,6 +1,6 @@
 #include <error.h>
 #include <ev.h>
-#include "ew.h"
+#include "server.h"
 
 static void set_nonblock
   ( int fd
@@ -12,12 +12,12 @@ static void set_nonblock
 }
 
 /** 
- * Must call this after ew_buf->save callback has been called.
+ * Must call this after ebb_buf->save callback has been called.
  * Allows you do to do async save operations (like writing to file).
- * ew_buf->save, like all callbacks, MUST be non-blocking.  
+ * ebb_buf->save, like all callbacks, MUST be non-blocking.  
  */
-void ew_buf_save_finished
-  ( ew_buf *buf
+void ebb_buf_save_finished
+  ( ebb_buf *buf
   )
 {
   ;
@@ -33,7 +33,7 @@ static void on_readable
   , int revents
   )
 {
-  ew_request *request = (ew_request*)(watcher->data);
+  ebb_request *request = (ebb_request*)(watcher->data);
 
   if(request->has_read_head)
     if(request->headers.chunked_encoding) 
@@ -47,14 +47,14 @@ static void on_readable
  *
  */
 read_header:
-  if(EW_MAX_HEADER_SIZE <= request->read) {
-    /* header buffer overflow. increase EW_MAX_HEADER_SIZE? */
+  if(EBB_MAX_HEADER_SIZE <= request->read) {
+    /* header buffer overflow. increase EBB_MAX_HEADER_SIZE? */
     goto error;
   }
   
   ssize_t read = recv( request->connection->fd
                      , request->header_buf + request->read
-                     , EW_MAX_HEADER_SIZE - request->read
+                     , EBB_MAX_HEADER_SIZE - request->read
                      , 0
                      );
 
@@ -89,20 +89,20 @@ read_header:
       goto read_body_normal;
   }
   if(content_length == 0 && left_over > 0)
-  if(request->headers.method == EW_GET || request->headers.method == EW_HEAD) {
+  if(request->headers.method == EBB_GET || request->headers.method == EBB_HEAD) {
     ev_io_stop(&request->read_watcher);
     /* start a new requestuest with left_over? */
     assert(left_over == 0 && "left_over == 0 for get/head. ");
      
   } else {
     unsigned int left_over = request->read - request->headers.len;
-    ew_buf *buf = request->get_buf(request, left_over);
+    ebb_buf *buf = request->get_buf(request, left_over);
     memcpy(buf->buf, request->header_buf + request->headers.len, left_over);
     request->body = buf;
   }
 
 recv_unknown_amount:
-  ew_recv_buf *recv_buf = NULL;
+  ebb_recv_buf *recv_buf = NULL;
 
 read_body_chunked:
   assert(0 && "Not Implemented");
@@ -159,7 +159,7 @@ static void on_request
   , int revents
   )
 {
-  ew_connection *connection = (ew_connection*)(watcher->data);
+  ebb_connection *connection = (ebb_connection*)(watcher->data);
   
   assert(connection->open);
   assert(connection->server->listening);
@@ -168,7 +168,7 @@ static void on_request
 
   ev_io_stop(loop, watcher);
 
-  ew_request *request = NULL;
+  ebb_request *request = NULL;
   if(connection->new_request)
     request = connection->new_request(connection);
   if(request == NULL) {
@@ -195,7 +195,7 @@ static void on_connection
   , int revents
   )
 {
-  ew_server *server = (ew_server*)(watcher->data);
+  ebb_server *server = (ebb_server*)(watcher->data);
 
   assert(server->listening);
   assert(server->loop == loop);
@@ -203,7 +203,7 @@ static void on_connection
   
   if(EV_ERROR & revents) {
     error(0, 0, "on_connection() got error event, closing server.\n");
-    ew_server_unlisten(server);
+    ebb_server_unlisten(server);
     return;
   }
   
@@ -218,7 +218,7 @@ static void on_connection
     return;
   }
 
-  ew_connection *connection = NULL;
+  ebb_connection *connection = NULL;
   if(server->new_connection)
      connection = server->new_connection(server, addr);
   if(connection == NULL) {
@@ -245,13 +245,13 @@ static void on_connection
 }
 
 
-static ew_request* request_new
-  ( ew_connection *connection
+static ebb_request* request_new
+  ( ebb_connection *connection
   , const char *intial_data
   , size_t initial_data_len 
   )
 {
-  ew_request *request = connection->request_handler(connection);
+  ebb_request *request = connection->request_handler(connection);
 
   if(request == NULL) {
     return NULL;
@@ -259,7 +259,7 @@ static ew_request* request_new
 
   request->connection = connection; 
 
-  assert(initial_data_len < EW_MAX_HEADER_SIZE);
+  assert(initial_data_len < EBB_MAX_HEADER_SIZE);
 
   memcpy(request->header_buf, initial_data, initial_data_len);
   request->read = intial_data_len;
@@ -278,12 +278,12 @@ static ew_request* request_new
  * Thie DOES NOT start the event loop. That is your job.
  * Start the event loop after the server is listening.
  */
-int ew_server_listen_on_fd
-  ( ew_server *server
+int ebb_server_listen_on_fd
+  ( ebb_server *server
   , const int sfd 
   )
 {
-  if (listen(sfd, EW_MAX_CLIENTS) < 0) {
+  if (listen(sfd, EBB_MAX_CLIENTS) < 0) {
     perror("listen()");
     return -1;
   }
@@ -306,8 +306,8 @@ int ew_server_listen_on_fd
  * Thie DOES NOT start the event loop. That is your job.
  * Start the event loop after the server is listening.
  */
-int ew_server_listen_on_port
-  ( ew_server *server
+int ebb_server_listen_on_port
+  ( ebb_server *server
   , const int port
   )
 {
@@ -342,7 +342,7 @@ int ew_server_listen_on_port
     goto error;
   }
   
-  int ret = ew_server_listen_on_fd(server, sfd);
+  int ret = ebb_server_listen_on_fd(server, sfd);
   if (ret >= 0) {
     sprintf(server->port, "%d", port);
   }
@@ -356,8 +356,8 @@ error:
  * Stops a server from listening. Will not accept new connections.
  * TODO: Drops all connections?
  */
-void ew_server_unlisten
-  ( ew_server *server
+void ebb_server_unlisten
+  ( ebb_server *server
   )
 {
   if(server->listening) {
@@ -369,15 +369,15 @@ void ew_server_unlisten
 }
 
 /**
- * Initialize an ew_server structure.
- * After calling ew_server_init set the callback server->new_connection 
+ * Initialize an ebb_server structure.
+ * After calling ebb_server_init set the callback server->new_connection 
  * and, optionally, callback data server->data 
  *
  * @params server the server to initialize
  * @params loop a libev loop
  */
-void ew_server_init
-  ( ew_server *server
+void ebb_server_init
+  ( ebb_server *server
   , struct ev_loop *loop
   )
 {
@@ -393,21 +393,21 @@ void ew_server_init
 }
 
 /**
- * Initialize an ew_connection structure.
- * After calling ew_connection_init set the callback 
+ * Initialize an ebb_connection structure.
+ * After calling ebb_connection_init set the callback 
  * connection->new_request 
  * and, optionally, callback data connection->data 
  * 
  * This should be called immediately after allocating space for
- * a new ew_connection structure. Most likely, this will only 
- * be called within the ew_server->new_connection callback which
+ * a new ebb_connection structure. Most likely, this will only 
+ * be called within the ebb_server->new_connection callback which
  * you supply. 
  *
  * @params connection the connection to initialize
  * @params timeout    the timeout in seconds
  */
-void ew_connection_init
-  ( ew_connection *connection
+void ebb_connection_init
+  ( ebb_connection *connection
   , float timeout
   )
 {
@@ -433,11 +433,11 @@ void ew_connection_init
 }
 
 /** 
- * Initialze ew_request structure. Call this from your connection->new_request
+ * Initialze ebb_request structure. Call this from your connection->new_request
  * callback
  */
-void ew_request_init
-  ( ew_request *request
+void ebb_request_init
+  ( ebb_request *request
   ) 
 {
   request->connection = NULL;
