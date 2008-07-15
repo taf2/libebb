@@ -43,7 +43,7 @@ struct ebb_parser {
   void (*request_complete)(void*);
 
   void (*chunk_handler)(void *data, const char *at, size_t length);
-  void (*http_field)(void *data, ebb_element *field, ebb_element *value);
+  void (*header_handler)(void *data, ebb_element *field, ebb_element *value);
   element_cb request_method;
   element_cb request_uri;
   element_cb fragment;
