@@ -50,6 +50,7 @@ static ebb_element* eip_pop
     eip_push(parser, eip);
   }
 
+  # TODO REMOVE!!! arg! should i use the -d option in ragel?
   action mmark {
     //printf("mmark!\n");
     eip = parser->new_element();
@@ -398,7 +399,6 @@ void ebb_parser_init
   parser->current_request = NULL;
   parser->header_field_element = NULL;
 
-  parser->nread = 0;
 
   parser->new_element = NULL;
   parser->new_request = NULL;
@@ -485,12 +485,11 @@ size_t ebb_parser_execute
   parser->top = top;
   COPYSTACK(parser->stack, stack);
 
-  parser->nread += p - buffer;
 
   /* each on the eip stack gets len */
   for(i = 0; parser->eip_stack[i] != NULL; i++) {
-    parser->eip_stack[i]->len = pe - parser->eip_stack[i]->base;
-    assert( parser->eip_stack[i]->base < pe && "mark is after buffer end");
+    last = ebb_element_last(parser->eip_stack[i]);
+    last->len = pe - last->base;
   }
 
   assert(p <= pe && "buffer overflow after parsing execute");

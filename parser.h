@@ -58,7 +58,6 @@ struct ebb_parser {
 #define PARSER_STACK_SIZE 10
   int stack[PARSER_STACK_SIZE];
   int top;
-  size_t nread;
 
   size_t chunk_size;
   unsigned eating:1;

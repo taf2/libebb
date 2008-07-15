@@ -226,13 +226,13 @@ ebb_request* new_request ()
   requests[num_requests].body[0] = 0;
   ebb_request *r = &requests[num_requests].request;
   ebb_request_init(r);
-  //printf("new request %d\n", num_requests);
+ // printf("new request %d\n", num_requests);
   return r;
 }
 
 void request_complete()
 {
-  //printf("request complete\n");
+ // printf("request complete\n");
   num_requests++;
 }
 
@@ -273,7 +273,7 @@ void header_handler(void *data, ebb_element *field, ebb_element *value)
 
   requests[num_requests].num_headers += 1;
 
-  //printf("header %s: %s\n", field_s, value_s);
+ // printf("header %s: %s\n", field_s, value_s);
 }
 
 
@@ -286,7 +286,7 @@ void query_string_cb(void *data, ebb_element *el)
 void chunk_handler(void *data, const char *p, size_t len)
 {
   strncat(requests[num_requests].body, p, len);
-  //printf("chunk_handler: '%s'\n", requests[num_requests].body);
+ // printf("chunk_handler: '%s'\n", requests[num_requests].body);
 }
 
 void parser_init()
@@ -340,17 +340,18 @@ int test_error
   return ebb_parser_has_error(&parser);
 }
 
-int test_multiple
-  ( const struct request_data *req1
-  , const struct request_data *req2
-  , const struct request_data *req3
+
+int test_multiple3
+  ( const struct request_data *r1
+  , const struct request_data *r2
+  , const struct request_data *r3
   )
 {
   char total[80*1024] = "\0";
 
-  strcat(total, req1->raw); 
-  strcat(total, req2->raw); 
-  strcat(total, req3->raw); 
+  strcat(total, r1->raw); 
+  strcat(total, r2->raw); 
+  strcat(total, r3->raw); 
 
   size_t traversed = 0;
   parser_init();
@@ -365,9 +366,168 @@ int test_multiple
   if(num_requests != 3)
     return FALSE;
 
-  return request_eq(0, req1) &&
-         request_eq(1, req2) &&
-         request_eq(2, req3);
+  return request_eq(0, r1) &&
+         request_eq(1, r2) &&
+         request_eq(2, r3);
+}
+
+/**
+ * SCAN through every possible breaking to make sure the 
+ * parser can handle getting the content in any chunks that
+ * might come from the socket
+ */
+int test_scan2
+  ( const struct request_data *r1
+  , const struct request_data *r2
+  , const struct request_data *r3
+  )
+{
+  char total[80*1024] = "\0";
+  char buf1[80*1024] = "\0";
+  char buf2[80*1024] = "\0";
+
+  strcat(total, r1->raw); 
+  strcat(total, r2->raw); 
+  strcat(total, r3->raw); 
+
+  int total_len = strlen(total);
+
+  //printf("total_len = %d\n", total_len);
+  int i;
+  for(i = 1; i < total_len - 1; i ++ ) {
+
+    parser_init();
+
+
+    int buf1_len = i;
+    strncpy(buf1, total, buf1_len);
+    buf1[buf1_len] = 0;
+
+    int buf2_len = total_len - i;
+    strncpy(buf2, total+i, buf2_len);
+    buf2[buf2_len] = 0;
+
+    ebb_parser_execute(&parser, buf1, buf1_len);
+
+    if( ebb_parser_has_error(&parser) ) {
+      return FALSE;
+    }
+    /*
+    if(ebb_parser_is_finished(&parser)) 
+      return FALSE;
+    */
+
+    ebb_parser_execute(&parser, buf2, buf2_len);
+
+    if( ebb_parser_has_error(&parser))
+      return FALSE;
+    if(!ebb_parser_is_finished(&parser)) 
+      return FALSE;
+
+    if(3 != num_requests) {
+      printf("scan error: got %d requests in iteration %d\n", num_requests, i);
+      return FALSE;
+    }
+
+    if(!request_eq(0, r1)) {
+      printf("not maching r1\n");
+      return FALSE;
+    }
+    if(!request_eq(1, r2)) {
+      printf("not maching r2\n");
+      return FALSE;
+    }
+    if(!request_eq(2, r3)) {
+      printf("not maching r3\n");
+      return FALSE;
+    }
+  }
+  return TRUE;
+}
+
+int test_scan3
+  ( const struct request_data *r1
+  , const struct request_data *r2
+  , const struct request_data *r3
+  )
+{
+  char total[80*1024] = "\0";
+  char buf1[80*1024] = "\0";
+  char buf2[80*1024] = "\0";
+  char buf3[80*1024] = "\0";
+
+  strcat(total, r1->raw); 
+  strcat(total, r2->raw); 
+  strcat(total, r3->raw); 
+
+  int total_len = strlen(total);
+
+  //printf("total_len = %d\n", total_len);
+  int i,j;
+  for(j = 2; j < total_len - 1; j ++ ) {
+    for(i = 1; i < j; i ++ ) {
+
+      parser_init();
+
+
+
+      int buf1_len = i;
+      strncpy(buf1, total, buf1_len);
+      buf1[buf1_len] = 0;
+
+      int buf2_len = j - i;
+      strncpy(buf2, total+i, buf2_len);
+      buf2[buf2_len] = 0;
+
+      int buf3_len = total_len - j;
+      strncpy(buf3, total+j, buf3_len);
+      buf3[buf3_len] = 0;
+
+      /*
+      printf("buf1: %s - %d\n", buf1, buf1_len);
+      printf("buf2: %s - %d \n", buf2, buf2_len );
+      printf("buf3: %s - %d\n\n", buf3, buf3_len);
+      */
+
+      ebb_parser_execute(&parser, buf1, buf1_len);
+
+      if( ebb_parser_has_error(&parser) ) {
+        return FALSE;
+      }
+
+      ebb_parser_execute(&parser, buf2, buf2_len);
+
+      if( ebb_parser_has_error(&parser) ) {
+        return FALSE;
+      }
+
+      ebb_parser_execute(&parser, buf3, buf3_len);
+
+      if( ebb_parser_has_error(&parser))
+        return FALSE;
+      if(!ebb_parser_is_finished(&parser)) 
+        return FALSE;
+
+      if(3 != num_requests) {
+        printf("scan error: only got %d requests in iteration %d\n", num_requests, i);
+        return FALSE;
+      }
+
+      if(!request_eq(0, r1)) {
+        printf("not maching r1\n");
+        return FALSE;
+      }
+      if(!request_eq(1, r2)) {
+        printf("not maching r2\n");
+        return FALSE;
+      }
+      if(!request_eq(2, r3)) {
+        printf("not maching r3\n");
+        return FALSE;
+      }
+    }
+  }
+  return TRUE;
 }
 
 #define break_output printf("test_break error.\ni: %d\nbuf1: %s\nbuf2: %s\n", i, buf1, buf2)
@@ -377,7 +537,6 @@ int test_multiple
 
 int main() 
 {
-  int i;
 
   assert(test_error("hello world"));
   assert(test_error("GET / HTP/1.1\r\n\r\n"));
@@ -434,131 +593,28 @@ int main()
   assert(1 == requests[0].request.version_major); 
   assert(1 == requests[0].request.version_minor);
 
+
+
   // three requests - no bodies
-  assert(test_multiple(&req1, &req2, &req3));
+  assert(test_multiple3(&req1, &req2, &req3));
 
   // three requests - one body
-  assert( test_multiple(&req1, &req4, &req3));
+  assert( test_multiple3(&req1, &req4, &req3));
 
   // three requests with bodies -- last is chunked
-  assert( test_multiple(&req4, &req5, &req6));
+  assert( test_multiple3(&req4, &req5, &req6));
 
   // three chunked requests
-  assert( test_multiple(&req7, &req6, &req8));
-
-  /*
-   * SCAN through every possible breaking to make sure the 
-   * parser can handle getting the content in any chunks that
-   * might come from the socket
-   */
+  assert( test_multiple3(&req7, &req6, &req8));
 
 
-  char total[80*1024] = "\0";
-  char buf1[80*1024] = "\0";
-  char buf2[80*1024] = "\0";
-  int total_len = strlen(total);
+  assert(test_scan2(&req1, &req2, &req3));
+  assert(test_scan2(&req4, &req5, &req6));
+  assert(test_scan2(&req7, &req8, &req9));
 
-  /* CONCAT req1, req2, req3 */
-/*
-  strcat(total, req1); 
-  strcat(total, req2); 
-  strcat(total, req3); 
-
-
-
-  for(i = 1; i < total_len - 1; i ++ )
-  {
-    parser_init();
-    //printf("i: %d\n", i);
-
-    strncpy(buf1, total, i);
-    strncpy(buf2, total+i, total_len - i);
-
-    ebb_parser_execute(&parser, buf1, i);
-
-    assert(!ebb_parser_has_error(&parser) );
-
-    ebb_parser_execute(&parser, buf2, total_len - i);
-
-    assert(!ebb_parser_has_error(&parser) );
-    assert(ebb_parser_is_finished(&parser) );
-
-    assert(3 == num_requests);
-    assert(request_eq(0, &req1));
-    assert(request_eq(1, &req2));
-    assert(request_eq(2, &req3));
-  }
-*/
-
-
-  total[0] = 0;
-  strcat(total, req4.raw); 
-  strcat(total, req5.raw); 
-  strcat(total, req6.raw); 
-  buf1[0] = '\0';
-  buf2[0] = '\0';
-  total_len = strlen(total);
-
-  for(i = 1; i < total_len - 1; i ++ )
-  {
-    parser_init();
-    //printf("i: %d\n", i);
-
-    strncpy(buf1, total, i);
-    buf1[i] = 0;
-    strncpy(buf2, total+i, total_len - i);
-    buf2[total_len - i] = 0;
-
-
-    ebb_parser_execute(&parser, buf1, i);
-
-    assert(!ebb_parser_has_error(&parser) );
-
-    ebb_parser_execute(&parser, buf2, total_len - i);
-
-    assert(!ebb_parser_has_error(&parser) );
-    assert(ebb_parser_is_finished(&parser) );
-
-    assert(3 == num_requests);
-    assert(request_eq(0, &req4));
-    assert(request_eq(1, &req5));
-    assert(request_eq(2, &req6));
-  }
-
-  total[0] = 0;
-  strcat(total, req7.raw); 
-  strcat(total, req8.raw); 
-  strcat(total, req9.raw); 
-  buf1[0] = '\0';
-  buf2[0] = '\0';
-  total_len = strlen(total);
-
-  for(i = 1; i < total_len - 1; i ++ )
-  {
-    parser_init();
-    //printf("i: %d\n", i);
-
-    strncpy(buf1, total, i);
-    buf1[i] = 0;
-    strncpy(buf2, total+i, total_len - i);
-    buf2[total_len - i] = 0;
-
-
-    ebb_parser_execute(&parser, buf1, i);
-
-    assert(!ebb_parser_has_error(&parser) );
-
-    ebb_parser_execute(&parser, buf2, total_len - i);
-
-    assert(!ebb_parser_has_error(&parser) );
-    assert(ebb_parser_is_finished(&parser) );
-
-    assert(3 == num_requests);
-    assert(request_eq(0, &req7));
-    assert(request_eq(1, &req8));
-    assert(request_eq(2, &req9));
-  }
-
+  assert(test_scan3(&req1, &req2, &req3));
+  assert(test_scan3(&req4, &req5, &req6));
+  assert(test_scan3(&req7, &req8, &req9));
 
 
   printf("okay\n");
