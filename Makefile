@@ -1,21 +1,22 @@
 SOURCES := $(wildcard *.c)
 
-test: parser_test
-	./parser_test
+test: test_parser
+	./test_parser
 
-chunk_test: chunked_message.c chunked_message.h
-	gcc -g -DUNITTEST $< -o $@
+objects: parser.o
 
-parser_test: parser.c parser.h
-	gcc -g -DUNITTEST $< -o $@
+test_parser: test_parser.c parser.o
+	gcc -g parser.o $< -o $@
+
+%.o: %.o
+	gcc -gc $< -o $@
 
 %.c: %.rl
 	ragel -s -G2 $< -o $@
 
 clean:
-	rm chunk_test
-	rm parser_test
+	rm *.o
+	rm test_parser
 
 clobber: clean
-	rm chunked_message.c
 	rm parser.c
