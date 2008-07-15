@@ -1,6 +1,10 @@
 #ifndef ebb_parser_h
 #define ebb_parser_h
 #include <sys/types.h> 
+#ifndef TRUE
+# define TRUE 1
+# define FALSE 0
+#endif
 
 typedef struct ebb_element ebb_element;
 typedef struct ebb_parser ebb_parser;
@@ -15,7 +19,6 @@ struct ebb_request {
   int transfer_encoding;
   size_t body_read;
   int eating_body;
-  unsigned complete:1;
 
   unsigned int version_major;
   unsigned int version_minor;

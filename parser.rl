@@ -3,10 +3,6 @@
 #include <assert.h>
 #include <string.h>
 
-#ifndef TRUE
-# define TRUE 1
-# define FALSE 0
-#endif
 #ifndef MIN
 # define MIN(a,b) (a < b ? a : b)
 #endif
@@ -277,7 +273,7 @@ static ebb_element* eip_pop
         p += eat;
         CURRENT->body_read += eat;
         CURRENT->eating_body = TRUE;
-        printf("eating body!\n");
+        //printf("eating body!\n");
 
         assert(CURRENT->body_read < CURRENT->content_length);
         assert(REMAINING == 0);
@@ -526,7 +522,6 @@ void ebb_request_init
   request->version_major = 0;
   request->version_minor = 0;
   request->transfer_encoding = EBB_IDENTITY;
-  request->complete = FALSE;
   request->free = NULL;
 }
 
