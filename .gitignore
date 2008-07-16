@@ -1,4 +1,2 @@
-chunk_test
-chunked_message.c
-test_parser
-parser.c
+test_request_parser
+request_parser.c
