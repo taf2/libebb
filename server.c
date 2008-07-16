@@ -1,6 +1,18 @@
-#include <error.h>
-#include <ev.h>
 #include "server.h"
+#include <ev.h>
+#include <string.h>
+#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/tcp.h> /* TCP_NODELAY */
+#include <netinet/in.h>  /* inet_ntoa */
+#include <arpa/inet.h>   /* inet_ntoa */
+#include <unistd.h>
+#include <error.h>
+#include <assert.h>
+
+#include <stdio.h>      /* perror */
+#include <errno.h>      /* perror */
 
 static void set_nonblock
   ( int fd
@@ -9,6 +21,30 @@ static void set_nonblock
   int flags = fcntl(fd, F_GETFL, 0);
   int r = fcntl(fd, F_SETFL, flags | O_NONBLOCK);
   assert(0 <= r && "Setting socket non-block failed!");
+}
+
+/* Internal callback 
+ * called by connection->timeout_watcher
+ */
+static void on_timeout 
+  ( struct ev_loop *loop
+  , ev_timer *watcher
+  , int revents
+  )
+{
+  ;
+}
+
+/* Internal callback 
+ * called by connection->wrte_watcher
+ */
+static void on_writable 
+  ( struct ev_loop *loop
+  , ev_io *watcher
+  , int revents
+  )
+{
+  ;
 }
 
 
@@ -21,7 +57,7 @@ static void on_readable
   , int revents
   )
 {
-  ebb_request *connection = (ebb_connection*)(watcher->data);
+  ebb_connection *connection = (ebb_connection*)(watcher->data);
 
   ebb_buf *buf = NULL;
   if(connection->new_buf)
@@ -39,7 +75,7 @@ static void on_readable
   /* XXX is this the right action to take for read==0 ? */
   if(read == 0) goto error; 
 
-  ev_timer_again(loop, watcher);
+  ev_timer_again(loop, &connection->timeout_watcher);
 
   ebb_parser_execute( &connection->parser
                     , buf->base
@@ -47,7 +83,7 @@ static void on_readable
                     );
 
   /* parse error? just drop the client. screw the 400 response */
-  if(request_headers_has_error(&request->headers)) goto error;
+  if(ebb_parser_has_error(&connection->parser)) goto error;
 
   if(buf->finished) 
     buf->finished(buf);
@@ -92,7 +128,7 @@ static void on_connection
 
   ebb_connection *connection = NULL;
   if(server->new_connection)
-     connection = server->new_connection(server, addr);
+     connection = server->new_connection(server, &addr);
   if(connection == NULL) {
     close(fd);
     return;
@@ -105,7 +141,7 @@ static void on_connection
   memcpy(&connection->sockaddr, &addr, addr_len);
   
   if(server->port[0] != '\0')
-    connection->ip = inet_ntoa(connneciton->sockaddr.sin_addr);  
+    connection->ip = inet_ntoa(connection->sockaddr.sin_addr);  
 
   /* Note: not starting the write watcher until there is data to be written */
   ev_io_set(&connection->write_watcher, connection->fd, EV_WRITE);
@@ -169,6 +205,11 @@ int ebb_server_listen_on_port
   setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, (void *)&flags, sizeof(flags));
   setsockopt(sfd, SOL_SOCKET, SO_KEEPALIVE, (void *)&flags, sizeof(flags));
   setsockopt(sfd, SOL_SOCKET, SO_LINGER, (void *)&ling, sizeof(ling));
+
+  /* TODO: Sending single byte messages in a response?
+   * Perhaps need to enable the Nagel algorithm dynamically
+   * For now disabling.
+   */
   setsockopt(sfd, IPPROTO_TCP, TCP_NODELAY, (void *)&flags, sizeof(flags));
   
   /*
@@ -272,5 +313,12 @@ void ebb_connection_init
 
   connection->free = NULL;
   connection->data = NULL;
+}
+
+void ebb_connection_close
+  ( ebb_connection *connection
+  )
+{
+  ;
 }
 

@@ -1,7 +1,10 @@
-#ifndef ebb_server
-#define ebb_server
+#ifndef ebb_server_h
+#define ebb_server_h
 
 #include "parser.h"
+#include <ev.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 #define EBB_MAX_CLIENTS 1024
 
 typedef struct ebb_buf ebb_buf;
@@ -12,7 +15,7 @@ typedef struct ebb_res ebb_res;
 
 
 struct ebb_buf {
-  unsigned char *base;
+  char *base;
   size_t len;
 
   void (*finished) (ebb_buf*);
@@ -33,7 +36,7 @@ struct ebb_server {
   unsigned listening:1;        /* ro */
 
   /* public */
-  ebb_connection* (*new_connection) (ebb_server*);
+  ebb_connection* (*new_connection) (ebb_server*, struct sockaddr_in*);
   void (*free) (ebb_server*);
   void *data;
 };
@@ -63,7 +66,7 @@ struct ebb_connection {
   int fd;                      /* ro */
   struct sockaddr_in sockaddr; /* ro */
   socklen_t socklen;           /* ro */ 
-  ebb_server *server           /* ro */
+  ebb_server *server;          /* ro */
   float timeout;               /* ro */
   char *ip;                    /* ro */
   unsigned open:1;             /* ro */
@@ -73,12 +76,16 @@ struct ebb_connection {
   ebb_parser parser;           /* private */
 
   /* public */
-  ebb_buf* (new_buf) (ebb_connection*);
-  ebb_request* (new_request) (ebb_connection*);
+  ebb_buf* (*new_buf) (ebb_connection*);
+  ebb_request* (*new_request) (ebb_connection*);
   int (*on_timeout) (ebb_connection*); /* return true to keep alive */
   void (*free) (ebb_connection*);
   void *data;
 };
+
+void ebb_connection_close
+  ( ebb_connection *connection
+  );
 
 ssize_t ebb_connection_write 
   ( ebb_connection *

@@ -1,21 +1,32 @@
-CC=gcc
+LIBEV = ${HOME}/local/libev
+GCC_OPTS  = -fPIC -g -Wall 
 
-test: test_parser
+libebb.so.0.0.1: objects
+	gcc -shared -Wl,-soname,libebb.so.0 -o $@ server.o parser.o
 
-objects: parser.o test_parser.o
+objects: server.o parser.o 
 
-test_parser: test_parser.o parser.o
-	gcc parser.o -g test_parser.o -o $@
+server.o: server.c server.h
+	gcc -fPIC -I${LIBEV}/include -c $< -o $@ -g -Wall
+
+test_parser: test_parser.c parser.o
+	gcc ${GCC_OPTS}  $< parser.o -o $@
 
 %.o: %.c
-	gcc -c $< -o $@ -g -Wall
+	gcc ${GCC_OPTS} -c $< -o $@ 
 
-%.c: %.rl
+parser.c: parser.rl
 	ragel -s -G2 $< -o $@
 
-clean:
-	rm *.o
-	rm test_parser
+.PHONY: clean test clobber
 
+test: test_parser
+	./test_parser
+
+clean:
+	-rm -f *.o
+	-rm -f test_parser
+	-rm -f libebb.so.0.0.1
+	
 clobber: clean
-	rm parser.c
+	-rm -f parser.c
