@@ -1,5 +1,5 @@
-#ifndef ebb_parser_h
-#define ebb_parser_h
+#ifndef ebb_request_parser_h
+#define ebb_request_parser_h
 
 #include <sys/types.h> 
 #ifndef TRUE
@@ -7,7 +7,7 @@
 # define FALSE 0
 #endif
 
-typedef struct ebb_parser_request ebb_parser_request;
+typedef struct ebb_request_info ebb_request_info;
 typedef struct ebb_element ebb_element;
 typedef struct ebb_parser  ebb_parser;
 typedef void (*element_cb)(void *data, ebb_element *);
@@ -15,7 +15,7 @@ typedef void (*element_cb)(void *data, ebb_element *);
 #define EBB_IDENTITY 0
 #define EBB_CHUNKED  1
 
-struct ebb_parser_request {
+struct ebb_request_info {
   size_t content_length;
   int transfer_encoding;
   size_t body_read;
@@ -25,7 +25,7 @@ struct ebb_parser_request {
   unsigned int version_major;
   unsigned int version_minor;
 
-  void (*free) (ebb_parser_request*);
+  void (*free) (ebb_request_info*);
 };
 
 struct ebb_element {
@@ -42,12 +42,12 @@ struct ebb_parser {
   void *data;
 
   /* allocates a new element */
-  ebb_element* (*new_element)();
+  ebb_element* (*new_element)(void *);
 
-  ebb_parser_request* (*new_request)(void*);
+  ebb_request_info* (*new_request_info)(void*);
   void (*request_complete)(void*);
 
-  void (*chunk_handler)(void *data, const char *at, size_t length);
+  void (*body_handler)(void *data, const char *at, size_t length);
   void (*header_handler)(void *data, ebb_element *field, ebb_element *value);
   element_cb request_method;
   element_cb request_uri;
@@ -69,7 +69,7 @@ struct ebb_parser {
    */
   ebb_element *eip_stack[3]; 
   ebb_element *header_field_element;
-  ebb_parser_request *current_request;
+  ebb_request_info *current_request;
 };
 
 void ebb_parser_init
@@ -90,8 +90,8 @@ int ebb_parser_is_finished
   ( ebb_parser *parser
   );
 
-void ebb_parser_request_init
-  ( ebb_parser_request *
+void ebb_request_info_init
+  ( ebb_request_info *
   );
 
 void ebb_element_init

@@ -1,4 +1,4 @@
-#include "parser.h"
+#include "request_parser.h"
 
 #include <stdio.h>
 #include <assert.h>
@@ -46,7 +46,7 @@ static ebb_element* eip_pop
 
   action mark {
     //printf("mark!\n");
-    eip = parser->new_element();
+    eip = parser->new_element(parser->data);
     eip->base = p;
     eip_push(parser, eip);
   }
@@ -54,7 +54,7 @@ static ebb_element* eip_pop
   # TODO REMOVE!!! arg! should i use the -d option in ragel?
   action mmark {
     //printf("mmark!\n");
-    eip = parser->new_element();
+    eip = parser->new_element(parser->data);
     eip->base = p;
     eip_push(parser, eip);
   }
@@ -199,12 +199,12 @@ static ebb_element* eip_pop
     //printf("chunk_size: %d\n", parser->chunk_size);
     if(parser->chunk_size > REMAINING) {
       parser->eating = TRUE;
-      parser->chunk_handler(parser->data, p, REMAINING);
+      parser->body_handler(parser->data, p, REMAINING);
       parser->chunk_size -= REMAINING;
       fhold; 
       fbreak;
     } else {
-      parser->chunk_handler(parser->data, p, parser->chunk_size);
+      parser->body_handler(parser->data, p, parser->chunk_size);
       p += parser->chunk_size;
       parser->chunk_size = 0;
       parser->eating = FALSE;
@@ -221,7 +221,7 @@ static ebb_element* eip_pop
   }
 
   action start_req {
-    CURRENT = parser->new_request(parser->data);
+    CURRENT = parser->new_request_info(parser->data);
   }
 
   action body_logic {
@@ -248,8 +248,8 @@ static ebb_element* eip_pop
          *
          */
         p += 1;
-        if( parser->chunk_handler )
-          parser->chunk_handler(parser->data, p, CURRENT->content_length); 
+        if( parser->body_handler )
+          parser->body_handler(parser->data, p, CURRENT->content_length); 
 
         p += CURRENT->content_length;
         CURRENT->body_read = CURRENT->content_length;
@@ -273,8 +273,8 @@ static ebb_element* eip_pop
         p += 1;
         size_t eat = REMAINING;
 
-        if( parser->chunk_handler && eat > 0)
-          parser->chunk_handler(parser->data, p, eat); 
+        if( parser->body_handler && eat > 0)
+          parser->body_handler(parser->data, p, eat); 
 
         p += eat;
         CURRENT->body_read += eat;
@@ -410,9 +410,9 @@ void ebb_parser_init
 
 
   parser->new_element = NULL;
-  parser->new_request = NULL;
+  parser->new_request_info = NULL;
   parser->request_complete = NULL;
-  parser->chunk_handler = NULL;
+  parser->body_handler = NULL;
   parser->header_handler = NULL;
   parser->request_method = NULL;
   parser->request_uri = NULL;
@@ -438,7 +438,7 @@ size_t ebb_parser_execute
   COPYSTACK(stack, parser->stack);
 
   assert(parser->new_element && "undefined callback");
-  assert(parser->new_request && "undefined callback");
+  assert(parser->new_request_info && "undefined callback");
 
   p = buffer;
   pe = buffer+len;
@@ -454,7 +454,7 @@ size_t ebb_parser_execute
     if(eat == parser->chunk_size) {
       parser->eating = FALSE;
     }
-    parser->chunk_handler(parser->data, p, eat);
+    parser->body_handler(parser->data, p, eat);
     p += eat;
     parser->chunk_size -= eat;
     //printf("eat: %d\n", eat);
@@ -468,7 +468,7 @@ size_t ebb_parser_execute
     //printf("eat normal body (before parse)\n");
     size_t eat = MIN(len, CURRENT->content_length - CURRENT->body_read);
 
-    parser->chunk_handler(parser->data, p, eat);
+    parser->body_handler(parser->data, p, eat);
     p += eat;
     CURRENT->body_read += eat;
 
@@ -484,7 +484,7 @@ size_t ebb_parser_execute
   /* each on the eip stack gets expanded */
   for(i = 0; parser->eip_stack[i] != NULL; i++) {
     last = ebb_element_last(parser->eip_stack[i]);
-    last->next = parser->new_element();
+    last->next = parser->new_element(parser->data);
     last->next->base = buffer;
   }
 
@@ -520,8 +520,8 @@ int ebb_parser_is_finished
   return parser->cs == ebb_parser_first_final;
 }
 
-void ebb_parser_request_init
-  ( ebb_parser_request *request
+void ebb_request_info_init
+  ( ebb_request_info *request
   )
 {
   request->expect_continue = FALSE;

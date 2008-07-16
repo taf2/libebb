@@ -1,7 +1,7 @@
-#ifndef ebb_server_h
-#define ebb_server_h
+#ifndef ebb_h
+#define ebb_h
 
-#include "parser.h"
+#include "request_parser.h"
 #include <ev.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -17,14 +17,7 @@ typedef struct ebb_res ebb_res;
 struct ebb_buf {
   char *base;
   size_t len;
-
-  void (*finished) (ebb_buf*);
-  void *data; 
 };
-
-void ebb_buf_save_finished
-  ( ebb_buf *buf
-  );
 
 struct ebb_server {
   int fd;                      /* ro */
@@ -40,7 +33,6 @@ struct ebb_server {
   void (*free) (ebb_server*);
   void *data;
 };
-
 
 void ebb_server_init
   ( ebb_server *server
@@ -76,9 +68,11 @@ struct ebb_connection {
   ebb_parser parser;           /* private */
 
   /* public */
+  ebb_element* (*new_element) (ebb_connection*);
   ebb_buf* (*new_buf) (ebb_connection*);
   ebb_request* (*new_request) (ebb_connection*);
   int (*on_timeout) (ebb_connection*); /* return true to keep alive */
+  void (*on_close) (ebb_connection*); 
   void (*free) (ebb_connection*);
   void *data;
 };
@@ -93,23 +87,31 @@ ssize_t ebb_connection_write
   , size_t len
   );
 
+ebb_request* ebb_connection_current_request
+  ( ebb_connection *connection
+  );
+
 void ebb_response_written_for
   ( ebb_request *request
   );
 
 struct ebb_request {
+  ebb_request_info info;              /* ro */
+  ebb_request *next;                  /* ro */
+  ebb_connection *connection;         /* ro */
 
-  ebb_parser_request info;
-  ebb_request *next;
-  ebb_connection *connection;
+  /* public */
+  int  (*on_expect_continue)(ebb_request*);
+  void (*on_complete)       (ebb_request*);
+  void (*ready_for_write)   (ebb_request*);
 
-
-  int (*on_expect_continue) (ebb_request*);
-  void (*on_body_chunk)(ebb_request *, const char *at, size_t length);
-  void (*on_header) (ebb_request*, ebb_element *field, ebb_element *value);
-  void (*on_complete) (ebb_request*);
-  void (*ready_for_write) (ebb_request*);
-
+  void (*body_handler)  (ebb_request*, const char *at, size_t length);
+  void (*header_handler)(ebb_request*, ebb_element *field, ebb_element *value);
+  void (*request_method)(ebb_request*, ebb_element*);
+  void (*request_uri)   (ebb_request*, ebb_element*);
+  void (*fragment)      (ebb_request*, ebb_element*);
+  void (*request_path)  (ebb_request*, ebb_element*);
+  void (*query_string)  (ebb_request*, ebb_element*);
 
   void *data;
 };

@@ -1,4 +1,4 @@
-#include "parser.h"
+#include "request_parser.h"
 #include <stdlib.h>
 #include <assert.h>
 #include <stdio.h>
@@ -16,7 +16,7 @@ struct request_data {
   int num_headers;
   char* header_fields[500];
   char* header_values[500];
-  ebb_parser_request request;
+  ebb_request_info request;
 };
 static struct request_data requests[5];
 static int num_requests;
@@ -221,7 +221,7 @@ ebb_element* new_element ()
   return el;
 }
 
-ebb_parser_request* new_request ()
+ebb_request_info* new_request_info ()
 {
   requests[num_requests].num_headers = 0;
   requests[num_requests].request_method[0] = 0;
@@ -230,8 +230,8 @@ ebb_parser_request* new_request ()
   requests[num_requests].fragment[0] = 0;
   requests[num_requests].query_string[0] = 0;
   requests[num_requests].body[0] = 0;
-  ebb_parser_request *r = &requests[num_requests].request;
-  ebb_parser_request_init(r);
+  ebb_request_info *r = &requests[num_requests].request;
+  ebb_request_info_init(r);
  // printf("new request %d\n", num_requests);
   return r;
 }
@@ -289,10 +289,10 @@ void query_string_cb(void *data, ebb_element *el)
 }
 
 
-void chunk_handler(void *data, const char *p, size_t len)
+void body_handler(void *data, const char *p, size_t len)
 {
   strncat(requests[num_requests].body, p, len);
- // printf("chunk_handler: '%s'\n", requests[num_requests].body);
+ // printf("body_handler: '%s'\n", requests[num_requests].body);
 }
 
 void parser_init()
@@ -302,7 +302,7 @@ void parser_init()
   ebb_parser_init(&parser);
 
   parser.new_element = new_element;
-  parser.new_request = new_request;
+  parser.new_request_info = new_request_info;
   parser.request_complete = request_complete;
   parser.header_handler = header_handler;
   parser.request_method = request_method_cb;
@@ -310,7 +310,7 @@ void parser_init()
   parser.request_uri = request_uri_cb;
   parser.fragment = fragment_cb;
   parser.query_string = query_string_cb;
-  parser.chunk_handler = chunk_handler;
+  parser.body_handler = body_handler;
 }
 
 int test_request
