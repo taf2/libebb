@@ -11,141 +11,15 @@
 #include <unistd.h>
 #include <error.h>
 #include <assert.h>
-
 #include <stdio.h>      /* perror */
 #include <errno.h>      /* perror */
 
-static const char *expect_continue_response = "100 Continue\r\n\r\n";
-
-static void set_nonblock
-  ( int fd
-  )
+static void set_nonblock (int fd)
 {
   int flags = fcntl(fd, F_GETFL, 0);
   int r = fcntl(fd, F_SETFL, flags | O_NONBLOCK);
   assert(0 <= r && "Setting socket non-block failed!");
 }
-
-static ebb_request_info* new_request_info
-  ( void *data
-  )
-{
-  ebb_connection *connection = (ebb_connection*) data;
-  ebb_request *request = NULL;
-  if(connection->new_request) 
-    request = connection->new_request(connection);
-  if(request == NULL)
-    return NULL;
-
-  request->connection = connection; 
-  ebb_request *last_request = ebb_connection_current_request(connection);
-  assert(last_request->next  == NULL);
-  last_request->next = request;
-  assert(request == ebb_connection_current_request(connection));
-
-  return &request->info;  
-}
-
-static void request_complete
-  ( void *data
-  )
-{
-  ebb_connection *connection = (ebb_connection*) data;
-  ebb_request *request = NULL;
-  if(connection->new_request) 
-    request = ebb_connection_current_request(connection);
-  assert(request != NULL);
-    
-  if(request->on_complete)
-    request->on_complete(request);    
-}
-
-/* <stupid_callbacks> */ 
-
-static ebb_element* new_element
-  ( void *data
-  )
-{
-  ebb_connection *connection = (ebb_connection*) data;
-  if(connection->new_element) 
-    return connection->new_element(connection);
-  return NULL;
-}
-
-static void body_handler
-  ( void *data
-  , const char *at
-  , size_t length
-  )
-{
-  ebb_connection *connection = (ebb_connection*) data;
-  ebb_request *request = ebb_connection_current_request(connection);
-  request->body_handler(request, at, length);
-}
-
-static void header_handler
-  ( void *data
-  , ebb_element *field
-  , ebb_element *value
-  )
-{
-  ebb_connection *connection = (ebb_connection*) data;
-  ebb_request *request = ebb_connection_current_request(connection);
-  request->header_handler(request, field, value);
-}
-
-static void request_method
-  ( void *data
-  , ebb_element *element
-  )
-{
-  ebb_connection *connection = (ebb_connection*) data;
-  ebb_request *request = ebb_connection_current_request(connection);
-  request->request_method(request, element);
-}
-
-static void request_uri
-  ( void *data
-  , ebb_element *element
-  )
-{
-  ebb_connection *connection = (ebb_connection*) data;
-  ebb_request *request = ebb_connection_current_request(connection);
-  request->request_uri(request, element);
-}
-
-static void query_string
-  ( void *data
-  , ebb_element *element
-  )
-{
-  ebb_connection *connection = (ebb_connection*) data;
-  ebb_request *request = ebb_connection_current_request(connection);
-  request->query_string(request, element);
-}
-
-static void request_path
-  ( void *data
-  , ebb_element *element
-  )
-{
-  ebb_connection *connection = (ebb_connection*) data;
-  ebb_request *request = ebb_connection_current_request(connection);
-  request->request_path(request, element);
-}
-
-static void fragment
-  ( void *data
-  , ebb_element *element
-  )
-{
-  ebb_connection *connection = (ebb_connection*) data;
-  ebb_request *request = ebb_connection_current_request(connection);
-  request->fragment(request, element);
-}
-
-/* </stupid_callbacks> */ 
-  
 
 /* Internal callback 
  * called by connection->timeout_watcher
@@ -176,7 +50,18 @@ static void on_writable
   , int revents
   )
 {
-  ;
+  ebb_connection *connection = (ebb_connection*)(watcher->data);
+
+  if(connection->on_writable) {
+    int r = connection->on_writable(connection);
+    assert(r == EBB_STOP || r == EBB_AGAIN);
+    if(EBB_STOP == r)
+      ev_io_stop(loop, watcher);
+    else
+      ev_timer_again(loop, &connection->timeout_watcher);
+  } else {
+    ev_io_stop(loop, watcher);
+  }
 }
 
 
@@ -209,13 +94,13 @@ static void on_readable
 
   ev_timer_again(loop, &connection->timeout_watcher);
 
-  ebb_parser_execute( &connection->parser
-                    , buf->base
-                    , read
-                    );
+  ebb_request_parser_execute( connection->parser
+                            , buf->base
+                            , read
+                            );
 
   /* parse error? just drop the client. screw the 400 response */
-  if(ebb_parser_has_error(&connection->parser)) goto error;
+  if(ebb_request_parser_has_error(connection->parser)) goto error;
 
   return;
 error:
@@ -257,7 +142,7 @@ static void on_connection
 
   ebb_connection *connection = NULL;
   if(server->new_connection)
-     connection = server->new_connection(server, &addr);
+    connection = server->new_connection(server, &addr);
   if(connection == NULL) {
     close(fd);
     return;
@@ -422,6 +307,7 @@ void ebb_server_init
  */
 void ebb_connection_init
   ( ebb_connection *connection
+  , ebb_request_parser *parser
   , float timeout
   )
 {
@@ -430,6 +316,7 @@ void ebb_connection_init
   connection->ip = NULL;
   connection->open = FALSE;
   connection->timeout = timeout;
+  connection->parser = parser;
   
   connection->write_watcher.data = connection;
   ev_init (&connection->write_watcher, on_writable);
@@ -440,25 +327,9 @@ void ebb_connection_init
   connection->timeout_watcher.data = connection;  
   ev_timer_init(&connection->timeout_watcher, on_timeout, timeout, 0);
 
-  /* initialize ebb_parser */
-  ebb_parser_init(&connection->parser);
-  connection->parser.data = connection;
-  connection->parser.new_element = new_element;
-  connection->parser.new_request_info = new_request_info;
-  connection->parser.request_complete = request_complete;
-  connection->parser.body_handler = body_handler;
-  connection->parser.header_handler = header_handler;
-  connection->parser.request_method = request_method;
-  connection->parser.request_uri = request_uri;
-  connection->parser.fragment = fragment;
-  connection->parser.request_path = request_path;
-  connection->parser.query_string = query_string;
-
-  
   connection->new_buf = NULL;
-  connection->new_request = NULL;
   connection->on_timeout = NULL;
-  connection->free = NULL;
+  connection->on_writable = NULL;
   connection->data = NULL;
 }
 
@@ -466,36 +337,19 @@ void ebb_connection_close
   ( ebb_connection *connection
   )
 {
-  ;
+  if(connection->open) {
+    close(connection->fd);
+    ev_io_stop(connection->server->loop, &connection->read_watcher);
+    ev_io_stop(connection->server->loop, &connection->write_watcher);
+    ev_timer_stop(connection->server->loop, &connection->timeout_watcher);
+    connection->open = FALSE;
+  }
 }
 
-ebb_request* ebb_connection_current_request
+void ebb_connection_start_write_watcher 
   ( ebb_connection *connection
   )
 {
-  return NULL;
-}
-
-void ebb_request_init
-  ( ebb_request *request
-  )
-{
-  ebb_request_info_init(&request->info);
-  request->next = NULL;
-  request->connection = NULL;
-
-  request->on_expect_continue = NULL;
-  request->on_complete = NULL;
-  request->ready_for_write = NULL;
-
-  request->body_handler = NULL;
-  request->header_handler = NULL;
-  request->request_method = NULL;
-  request->request_uri = NULL;
-  request->fragment = NULL;
-  request->request_path = NULL;
-  request->query_string = NULL;
-
-  request->data = NULL;
+  ev_io_start(connection->server->loop, &connection->write_watcher);
 }
 

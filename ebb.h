@@ -7,6 +7,9 @@
 #include <netinet/in.h>
 #define EBB_MAX_CLIENTS 1024
 
+#define EBB_AGAIN 0
+#define EBB_STOP 1
+
 typedef struct ebb_buf ebb_buf;
 typedef struct ebb_server ebb_server;
 typedef struct ebb_connection ebb_connection;
@@ -65,57 +68,23 @@ struct ebb_connection {
   ev_io read_watcher;          /* private */
   ev_io write_watcher;         /* private */
   ev_timer timeout_watcher;    /* private */
-  ebb_parser parser;           /* private */
+  ebb_request_parser *parser;  /* private */
 
-  /* public */
-  ebb_element* (*new_element) (ebb_connection*);
-  ebb_buf* (*new_buf) (ebb_connection*);
-  ebb_request* (*new_request) (ebb_connection*);
-  int (*on_timeout) (ebb_connection*); /* return true to keep alive */
-  void (*on_close) (ebb_connection*); 
-  void (*free) (ebb_connection*);
+  ebb_buf* (*new_buf) (ebb_connection*); 
+  /* Returns EBB_STOP or EBB_AGAIN */
+  int (*on_writable) (ebb_connection*); 
+  /* Returns EBB_STOP or EBB_AGAIN */
+  int (*on_timeout) (ebb_connection*); 
   void *data;
 };
 
 void ebb_connection_close
-  ( ebb_connection *connection
-  );
-
-ssize_t ebb_connection_write 
   ( ebb_connection *
-  , const char *data
-  , size_t len
   );
 
-ebb_request* ebb_connection_current_request
-  ( ebb_connection *connection
+void ebb_connection_start_write_watcher 
+  ( ebb_connection *
   );
-
-void ebb_response_written_for
-  ( ebb_request *request
-  );
-
-struct ebb_request {
-  ebb_request_info info;              /* ro */
-  ebb_request *next;                  /* ro */
-  ebb_connection *connection;         /* ro */
-
-  /* public */
-  int  (*on_expect_continue)(ebb_request*);
-  void (*on_complete)       (ebb_request*);
-  void (*ready_for_write)   (ebb_request*);
-
-  void (*body_handler)  (ebb_request*, const char *at, size_t length);
-  void (*header_handler)(ebb_request*, ebb_element *field, ebb_element *value);
-  void (*request_method)(ebb_request*, ebb_element*);
-  void (*request_uri)   (ebb_request*, ebb_element*);
-  void (*fragment)      (ebb_request*, ebb_element*);
-  void (*request_path)  (ebb_request*, ebb_element*);
-  void (*query_string)  (ebb_request*, ebb_element*);
-
-  void *data;
-};
-
 
 
 #endif

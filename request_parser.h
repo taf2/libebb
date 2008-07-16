@@ -9,7 +9,7 @@
 
 typedef struct ebb_request_info ebb_request_info;
 typedef struct ebb_element ebb_element;
-typedef struct ebb_parser  ebb_parser;
+typedef struct ebb_request_parser  ebb_request_parser;
 typedef void (*element_cb)(void *data, ebb_element *);
 
 #define EBB_IDENTITY 0
@@ -36,7 +36,7 @@ struct ebb_element {
   void (*free) (ebb_element*);
 }; 
 
-struct ebb_parser {
+struct ebb_request_parser {
 
 /* PUBLIC */
   void *data;
@@ -72,22 +72,22 @@ struct ebb_parser {
   ebb_request_info *current_request;
 };
 
-void ebb_parser_init
-  ( ebb_parser *parser
+void ebb_request_parser_init
+  ( ebb_request_parser *parser
   );
 
-size_t ebb_parser_execute
-  ( ebb_parser *parser
+size_t ebb_request_parser_execute
+  ( ebb_request_parser *parser
   , const char *data
   , size_t len
   );
 
-int ebb_parser_has_error
-  ( ebb_parser *parser
+int ebb_request_parser_has_error
+  ( ebb_request_parser *parser
   );
 
-int ebb_parser_is_finished
-  ( ebb_parser *parser
+int ebb_request_parser_is_finished
+  ( ebb_request_parser *parser
   );
 
 void ebb_request_info_init

@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
-static ebb_parser parser;
+static ebb_request_parser parser;
 struct request_data {
   const char *raw;
   char request_method[500];
@@ -299,7 +299,7 @@ void parser_init()
 {
   num_requests = 0;
 
-  ebb_parser_init(&parser);
+  ebb_request_parser_init(&parser);
 
   parser.new_element = new_element;
   parser.new_request_info = new_request_info;
@@ -320,13 +320,13 @@ int test_request
   size_t traversed = 0;
   parser_init();
 
-  traversed = ebb_parser_execute( &parser
+  traversed = ebb_request_parser_execute( &parser
                                 , request_data->raw 
-                                , strlen(request_data->raw));
-
-  if( ebb_parser_has_error(&parser) )
+                                , strlen(request_data->raw)
+                                );
+  if( ebb_request_parser_has_error(&parser) )
     return FALSE;
-  if(! ebb_parser_is_finished(&parser) )
+  if(! ebb_request_parser_is_finished(&parser) )
     return FALSE;
   if(num_requests != 1)
     return FALSE;
@@ -341,9 +341,9 @@ int test_error
   size_t traversed = 0;
   parser_init();
 
-  traversed = ebb_parser_execute(&parser, buf, strlen(buf));
+  traversed = ebb_request_parser_execute(&parser, buf, strlen(buf));
 
-  return ebb_parser_has_error(&parser);
+  return ebb_request_parser_has_error(&parser);
 }
 
 
@@ -362,12 +362,12 @@ int test_multiple3
   size_t traversed = 0;
   parser_init();
 
-  traversed = ebb_parser_execute(&parser, total, strlen(total));
+  traversed = ebb_request_parser_execute(&parser, total, strlen(total));
 
 
-  if( ebb_parser_has_error(&parser) )
+  if( ebb_request_parser_has_error(&parser) )
     return FALSE;
-  if(! ebb_parser_is_finished(&parser) )
+  if(! ebb_request_parser_is_finished(&parser) )
     return FALSE;
   if(num_requests != 3)
     return FALSE;
@@ -413,21 +413,21 @@ int test_scan2
     strncpy(buf2, total+i, buf2_len);
     buf2[buf2_len] = 0;
 
-    ebb_parser_execute(&parser, buf1, buf1_len);
+    ebb_request_parser_execute(&parser, buf1, buf1_len);
 
-    if( ebb_parser_has_error(&parser) ) {
+    if( ebb_request_parser_has_error(&parser) ) {
       return FALSE;
     }
     /*
-    if(ebb_parser_is_finished(&parser)) 
+    if(ebb_request_parser_is_finished(&parser)) 
       return FALSE;
     */
 
-    ebb_parser_execute(&parser, buf2, buf2_len);
+    ebb_request_parser_execute(&parser, buf2, buf2_len);
 
-    if( ebb_parser_has_error(&parser))
+    if( ebb_request_parser_has_error(&parser))
       return FALSE;
-    if(!ebb_parser_is_finished(&parser)) 
+    if(!ebb_request_parser_is_finished(&parser)) 
       return FALSE;
 
     if(3 != num_requests) {
@@ -495,23 +495,23 @@ int test_scan3
       printf("buf3: %s - %d\n\n", buf3, buf3_len);
       */
 
-      ebb_parser_execute(&parser, buf1, buf1_len);
+      ebb_request_parser_execute(&parser, buf1, buf1_len);
 
-      if( ebb_parser_has_error(&parser) ) {
+      if( ebb_request_parser_has_error(&parser) ) {
         return FALSE;
       }
 
-      ebb_parser_execute(&parser, buf2, buf2_len);
+      ebb_request_parser_execute(&parser, buf2, buf2_len);
 
-      if( ebb_parser_has_error(&parser) ) {
+      if( ebb_request_parser_has_error(&parser) ) {
         return FALSE;
       }
 
-      ebb_parser_execute(&parser, buf3, buf3_len);
+      ebb_request_parser_execute(&parser, buf3, buf3_len);
 
-      if( ebb_parser_has_error(&parser))
+      if( ebb_request_parser_has_error(&parser))
         return FALSE;
-      if(!ebb_parser_is_finished(&parser)) 
+      if(!ebb_request_parser_is_finished(&parser)) 
         return FALSE;
 
       if(3 != num_requests) {

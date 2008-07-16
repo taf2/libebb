@@ -14,7 +14,7 @@
 #define eip_empty(parser) (parser->eip_stack[0] == NULL)
 
 static void eip_push
-  ( ebb_parser *parser
+  ( ebb_request_parser *parser
   , ebb_element *element
   )
 {
@@ -26,7 +26,7 @@ static void eip_push
 }
 
 static ebb_element* eip_pop
-  ( ebb_parser *parser
+  ( ebb_request_parser *parser
   )
 {
   int i;
@@ -42,7 +42,7 @@ static ebb_element* eip_pop
 
 
 %%{
-  machine ebb_parser;
+  machine ebb_request_parser;
 
   action mark {
     //printf("mark!\n");
@@ -266,7 +266,7 @@ static ebb_element* eip_pop
          * The body is larger than the buffer
          * EAT REST OF BUFFER
          * there is still more to read though. this will  
-         * be handled on the next invokion of ebb_parser_execute
+         * be handled on the next invokion of ebb_request_parser_execute
          * right before we enter the state machine. 
          *
          */
@@ -386,8 +386,8 @@ static ebb_element* eip_pop
 
 #define COPYSTACK(dest, src)  for(i = 0; i < PARSER_STACK_SIZE; i++) { dest[i] = src[i]; }
 
-void ebb_parser_init
-  ( ebb_parser *parser
+void ebb_request_parser_init
+  ( ebb_request_parser *parser
   ) 
 {
   int i;
@@ -423,8 +423,8 @@ void ebb_parser_init
 
 
 /** exec **/
-size_t ebb_parser_execute
-  ( ebb_parser *parser
+size_t ebb_request_parser_execute
+  ( ebb_request_parser *parser
   , const char *buffer
   , size_t len
   )
@@ -506,18 +506,18 @@ size_t ebb_parser_execute
   return(p - buffer);
 }
 
-int ebb_parser_has_error
-  ( ebb_parser *parser
+int ebb_request_parser_has_error
+  ( ebb_request_parser *parser
   ) 
 {
-  return parser->cs == ebb_parser_error;
+  return parser->cs == ebb_request_parser_error;
 }
 
-int ebb_parser_is_finished
-  ( ebb_parser *parser
+int ebb_request_parser_is_finished
+  ( ebb_request_parser *parser
   ) 
 {
-  return parser->cs == ebb_parser_first_final;
+  return parser->cs == ebb_request_parser_first_final;
 }
 
 void ebb_request_info_init
