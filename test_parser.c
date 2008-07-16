@@ -4,8 +4,6 @@
 #include <stdio.h>
 #include <string.h>
 
-
-
 static ebb_parser parser;
 struct request_data {
   const char *raw;
@@ -23,58 +21,66 @@ struct request_data {
 static struct request_data requests[5];
 static int num_requests;
 
-
-// get - no headers - no body
-const struct request_data req1 =  
-  { raw: "GET /req1/world HTTP/1.1\r\n\r\n"
+const struct request_data dumbfuck =
+  { raw: "GET /dumbfuck HTTP/1.1\r\naaaaaaaaaaaaa:++++++++++\r\n\r\n"
   , request_method: "GET"
   , query_string: ""
   , fragment: ""
-  , request_path: "/req1/world"
-  , request_uri: "/req1/world"
+  , request_path: "/dumbfuck"
+  , request_uri: "/dumbfuck"
+  , num_headers: 1
+  , header_fields: { "aaaaaaaaaaaaa" }
+  , header_values: {  "++++++++++" }
+  , body: ""
+  };
+
+const struct request_data fragment_in_uri = 
+  { raw: "GET /forums/1/topics/2375?page=1#posts-17408 HTTP/1.1\r\n\r\n"
+  , request_method: "GET"
+  , query_string: "page=1"
+  , fragment: "posts-17408"
+  , request_path: "/forums/1/topics/2375"
+  /* XXX request uri does not include fragment? */
+  , request_uri: "/forums/1/topics/2375?page=1" 
   , num_headers: 0
-  , header_fields: {  }
-  , header_values: {  }
+  , body: ""
+  };
+
+
+// get - no headers - no body
+const struct request_data get_no_headers_no_body =  
+  { raw: "GET /get_no_headers_no_body/world HTTP/1.1\r\n\r\n"
+  , request_method: "GET"
+  , query_string: ""
+  , fragment: ""
+  , request_path: "/get_no_headers_no_body/world"
+  , request_uri: "/get_no_headers_no_body/world"
+  , num_headers: 0
   , body: ""
   };
 
 // get - one header - no body
-const struct request_data req2 =  
-  { raw: "GET /req2 HTTP/1.1\r\nAccept: */*\r\n\r\n"
+const struct request_data get_one_header_no_body =  
+  { raw: "GET /get_one_header_no_body HTTP/1.1\r\nAccept: */*\r\n\r\n"
   , request_method: "GET"
   , query_string: ""
   , fragment: ""
-  , request_path: "/req2"
-  , request_uri: "/req2"
+  , request_path: "/get_one_header_no_body"
+  , request_uri: "/get_one_header_no_body"
   , num_headers: 1
   , header_fields: { "Accept" }
   , header_values: { "*/*" }
   , body: ""
   };
-
-// post - one header - no body
-const struct request_data req3 =  
-  { raw: "POST /req3 HTTP/1.1\r\nAccept: */*\r\n\r\n"
-  , request_method: "POST"
-  , query_string: ""
-  , fragment: ""
-  , request_path: "/req3"
-  , request_uri: "/req3"
-  , num_headers: 1
-  , header_fields: { "Accept" }
-  , header_values: { "*/*" }
-  , body: ""
-  };
-
 
 // get - no headers - body "HELLO"
-const struct request_data req4 =  
-  { raw: "GET /req4 HTTP/1.1\r\nconTENT-Length: 5\r\n\r\nHELLO"
+const struct request_data get_funky_content_length_body_hello =  
+  { raw: "GET /get_funky_content_length_body_hello HTTP/1.1\r\nconTENT-Length: 5\r\n\r\nHELLO"
   , request_method: "GET"
   , query_string: ""
   , fragment: ""
-  , request_path: "/req4"
-  , request_uri: "/req4"
+  , request_path: "/get_funky_content_length_body_hello"
+  , request_uri: "/get_funky_content_length_body_hello"
   , num_headers: 1
   , header_fields: { "conTENT-Length" }
   , header_values: { "5" }
@@ -82,13 +88,13 @@ const struct request_data req4 =
   };
 
 // post - one header - body "World"
-const struct request_data req5 =  
-  { raw: "POST /req5?q=search#hey HTTP/1.1\r\nAccept: */*\r\nContent-Length: 5\r\n\r\nWorld"
+const struct request_data post_one_header_body_world =  
+  { raw: "POST /post_one_header_body_world?q=search#hey HTTP/1.1\r\nAccept: */*\r\nContent-Length: 5\r\n\r\nWorld"
   , request_method: "POST"
   , query_string: "q=search"
   , fragment: "hey"
-  , request_path: "/req5"
-  , request_uri: "/req5?q=search"
+  , request_path: "/post_one_header_body_world"
+  , request_uri: "/post_one_header_body_world?q=search"
   , num_headers: 2
   , header_fields: { "Accept", "Content-Length" }
   , header_values: { "*/*", "5" }
@@ -96,13 +102,13 @@ const struct request_data req5 =
   };
 
 // post - no headers - chunked body "all your base are belong to us"
-const struct request_data req6 =  
-  { raw: "POST /req6 HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n1e\r\nall your base are belong to us\r\n0\r\n\r\n"
+const struct request_data post_chunked_all_your_base =  
+  { raw: "POST /post_chunked_all_your_base HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n1e\r\nall your base are belong to us\r\n0\r\n\r\n"
   , request_method: "POST"
   , query_string: ""
   , fragment: ""
-  , request_path: "/req6"
-  , request_uri: "/req6"
+  , request_path: "/post_chunked_all_your_base"
+  , request_uri: "/post_chunked_all_your_base"
   , num_headers: 1
   , header_fields: { "Transfer-Encoding" }
   , header_values: { "chunked" }
@@ -110,13 +116,13 @@ const struct request_data req6 =
   };
 
 // two chunks ; triple zero ending
-const struct request_data req7 =  
-  { raw: "POST /req7 HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n000\r\n\r\n"
+const struct request_data two_chunks_mult_zero_end =  
+  { raw: "POST /two_chunks_mult_zero_end HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n000\r\n\r\n"
   , request_method: "POST"
   , query_string: ""
   , fragment: ""
-  , request_path: "/req7"
-  , request_uri: "/req7"
+  , request_path: "/two_chunks_mult_zero_end"
+  , request_uri: "/two_chunks_mult_zero_end"
   , num_headers: 1
   , header_fields: { "Transfer-Encoding" }
   , header_values: { "chunked" }
@@ -125,13 +131,13 @@ const struct request_data req7 =
 
 
 // chunked with trailing headers. blech.
-const struct request_data req8 =  
-  { raw: "POST /req8 HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n0\r\nVary: *\r\nContent-Type: text/plain\r\n\r\n"
+const struct request_data chunked_w_trailing_headers =  
+  { raw: "POST /chunked_w_trailing_headers HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n0\r\nVary: *\r\nContent-Type: text/plain\r\n\r\n"
   , request_method: "POST"
   , query_string: ""
   , fragment: ""
-  , request_path: "/req8"
-  , request_uri: "/req8"
+  , request_path: "/chunked_w_trailing_headers"
+  , request_uri: "/chunked_w_trailing_headers"
   , num_headers: 1
   , header_fields: { "Transfer-Encoding" }
   , header_values: { "chunked" }
@@ -139,13 +145,13 @@ const struct request_data req8 =
   };
 
 // with bullshit after the length
-const struct request_data req9 =  
-  { raw: "POST /req9 HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5; ihatew3;whatthefuck=aretheseparametersfor\r\nhello\r\n6; blahblah; blah\r\n world\r\n0\r\n\r\n"
+const struct request_data chunked_w_bullshit_after_length =  
+  { raw: "POST /chunked_w_bullshit_after_length HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5; ihatew3;whatthefuck=aretheseparametersfor\r\nhello\r\n6; blahblah; blah\r\n world\r\n0\r\n\r\n"
   , request_method: "POST"
   , query_string: ""
   , fragment: ""
-  , request_path: "/req9"
-  , request_uri: "/req9"
+  , request_path: "/chunked_w_bullshit_after_length"
+  , request_uri: "/chunked_w_bullshit_after_length"
   , num_headers: 1
   , header_fields: { "Transfer-Encoding" }
   , header_values: { "chunked" }
@@ -530,11 +536,6 @@ int test_scan3
   return TRUE;
 }
 
-#define break_output printf("test_break error.\ni: %d\nbuf1: %s\nbuf2: %s\n", i, buf1, buf2)
-
-#define assert_req_str_eql(num, FIELD, expected)  \
-  assert(0 == strcmp(requests[num].FIELD, expected))
-
 int main() 
 {
 
@@ -543,78 +544,58 @@ int main()
 
   // Zed's header tests
 
-  const char *dumbfuck = "GET / HTTP/1.1\r\naaaaaaaaaaaaa:++++++++++\r\n\r\n";
-  assert(!test_error(dumbfuck));
-  assert(1 == num_requests);
-  assert_req_str_eql(0, body, "");
-  assert_req_str_eql(0, fragment, "");
-  assert_req_str_eql(0, query_string, "");
-  assert_req_str_eql(0, request_method, "GET");
-  assert_req_str_eql(0, request_path, "/");
-  assert(1 == requests[0].request.version_major);
-  assert(1 == requests[0].request.version_minor);
-  assert(1 == requests[0].num_headers);
-  assert_req_str_eql(0, header_fields[0], "aaaaaaaaaaaaa");
-  assert_req_str_eql(0, header_values[0], "++++++++++");
+  assert(test_request(&dumbfuck));
 
   const char *dumbfuck2 = "GET / HTTP/1.1\r\nX-SSL-Bullshit:   -----BEGIN CERTIFICATE-----\r\n\tMIIFbTCCBFWgAwIBAgICH4cwDQYJKoZIhvcNAQEFBQAwcDELMAkGA1UEBhMCVUsx\r\n\tETAPBgNVBAoTCGVTY2llbmNlMRIwEAYDVQQLEwlBdXRob3JpdHkxCzAJBgNVBAMT\r\n\tAkNBMS0wKwYJKoZIhvcNAQkBFh5jYS1vcGVyYXRvckBncmlkLXN1cHBvcnQuYWMu\r\n\tdWswHhcNMDYwNzI3MTQxMzI4WhcNMDcwNzI3MTQxMzI4WjBbMQswCQYDVQQGEwJV\r\n\tSzERMA8GA1UEChMIZVNjaWVuY2UxEzARBgNVBAsTCk1hbmNoZXN0ZXIxCzAJBgNV\r\n\tBAcTmrsogriqMWLAk1DMRcwFQYDVQQDEw5taWNoYWVsIHBhcmQYJKoZIhvcNAQEB\r\n\tBQADggEPADCCAQoCggEBANPEQBgl1IaKdSS1TbhF3hEXSl72G9J+WC/1R64fAcEF\r\n\tW51rEyFYiIeZGx/BVzwXbeBoNUK41OK65sxGuflMo5gLflbwJtHBRIEKAfVVp3YR\r\n\tgW7cMA/s/XKgL1GEC7rQw8lIZT8RApukCGqOVHSi/F1SiFlPDxuDfmdiNzL31+sL\r\n\t0iwHDdNkGjy5pyBSB8Y79dsSJtCW/iaLB0/n8Sj7HgvvZJ7x0fr+RQjYOUUfrePP\r\n\tu2MSpFyf+9BbC/aXgaZuiCvSR+8Snv3xApQY+fULK/xY8h8Ua51iXoQ5jrgu2SqR\r\n\twgA7BUi3G8LFzMBl8FRCDYGUDy7M6QaHXx1ZWIPWNKsCAwEAAaOCAiQwggIgMAwG\r\n\tA1UdEwEB/wQCMAAwEQYJYIZIAYb4QgEBBAQDAgWgMA4GA1UdDwEB/wQEAwID6DAs\r\n\tBglghkgBhvhCAQ0EHxYdVUsgZS1TY2llbmNlIFVzZXIgQ2VydGlmaWNhdGUwHQYD\r\n\tVR0OBBYEFDTt/sf9PeMaZDHkUIldrDYMNTBZMIGaBgNVHSMEgZIwgY+AFAI4qxGj\r\n\tloCLDdMVKwiljjDastqooXSkcjBwMQswCQYDVQQGEwJVSzERMA8GA1UEChMIZVNj\r\n\taWVuY2UxEjAQBgNVBAsTCUF1dGhvcml0eTELMAkGA1UEAxMCQ0ExLTArBgkqhkiG\r\n\t9w0BCQEWHmNhLW9wZXJhdG9yQGdyaWQtc3VwcG9ydC5hYy51a4IBADApBgNVHRIE\r\n\tIjAggR5jYS1vcGVyYXRvckBncmlkLXN1cHBvcnQuYWMudWswGQYDVR0gBBIwEDAO\r\n\tBgwrBgEEAdkvAQEBAQYwPQYJYIZIAYb4QgEEBDAWLmh0dHA6Ly9jYS5ncmlkLXN1\r\n\tcHBvcnQuYWMudmT4sopwqlBWsvcHViL2NybC9jYWNybC5jcmwwPQYJYIZIAYb4QgEDBDAWLmh0\r\n\tdHA6Ly9jYS5ncmlkLXN1cHBvcnQuYWMudWsvcHViL2NybC9jYWNybC5jcmwwPwYD\r\n\tVR0fBDgwNjA0oDKgMIYuaHR0cDovL2NhLmdyaWQt5hYy51ay9wdWIv\r\n\tY3JsL2NhY3JsLmNybDANBgkqhkiG9w0BAQUFAAOCAQEAS/U4iiooBENGW/Hwmmd3\r\n\tXCy6Zrt08YjKCzGNjorT98g8uGsqYjSxv/hmi0qlnlHs+k/3Iobc3LjS5AMYr5L8\r\n\tUO7OSkgFFlLHQyC9JzPfmLCAugvzEbyv4Olnsr8hbxF1MbKZoQxUZtMVu29wjfXk\r\n\thTeApBv7eaKCWpSp7MCbvgzm74izKhu3vlDk9w6qVrxePfGgpKPqfHiOoGhFnbTK\r\n\twTC6o2xq5y0qZ03JonF7OJspEd3I5zKY3E+ov7/ZhW6DqT8UFvsAdjvQbXyhV8Eu\r\n\tYhixw1aKEPzNjNowuIseVogKOLXxWI5vAi5HgXdS0/ES5gDGsABo4fqovUKlgop3\r\n\tRA==\r\n\t-----END CERTIFICATE-----\r\n\r\n";
   assert(test_error(dumbfuck2));
 
-  const char *fragment_in_uri = "GET /forums/1/topics/2375?page=1#posts-17408 HTTP/1.1\r\n\r\n";
-  assert(!test_error(fragment_in_uri));
-  assert_req_str_eql(0, fragment, "posts-17408");
-  assert_req_str_eql(0, query_string, "page=1");
-  assert_req_str_eql(0, request_method, "GET");
-  assert_req_str_eql(0, request_path, "/forums/1/topics/2375");
-  /* XXX request uri does not include fragment? */
-  assert_req_str_eql(0, request_uri, "/forums/1/topics/2375?page=1");
-
+  assert(test_request(&fragment_in_uri));
 
   /* TODO sending junk and large headers gets rejected */
 
 
   /* check to make sure our predefined requests are okay */
 
-  assert(test_request(&req1));
-  assert(test_request(&req2));
-  assert(test_request(&req3));
+  assert(test_request(&get_no_headers_no_body));
+  assert(test_request(&get_one_header_no_body));
+  assert(test_request(&get_no_headers_no_body));
 
   // no content-length
-  const char *bad_req1 = "GET /bad_req1/world HTTP/1.1\r\nAccept: */*\r\nHELLO\r\n";
-  assert(test_error(bad_req1)); // error if there is a body without content length
+  const char *bad_get_no_headers_no_body = "GET /bad_get_no_headers_no_body/world HTTP/1.1\r\nAccept: */*\r\nHELLO\r\n";
+  assert(test_error(bad_get_no_headers_no_body)); // error if there is a body without content length
 
-  assert(test_request(&req4));
-  assert(test_request(&req5));
-  assert(test_request(&req6));
-  assert(test_request(&req7));
-  assert(test_request(&req8));
+  assert(test_request(&get_funky_content_length_body_hello));
+  assert(test_request(&post_one_header_body_world));
+  assert(test_request(&post_chunked_all_your_base));
+  assert(test_request(&two_chunks_mult_zero_end));
+  assert(test_request(&chunked_w_trailing_headers));
 
-  assert(test_request(&req9));
+  assert(test_request(&chunked_w_bullshit_after_length));
   assert(1 == requests[0].request.version_major); 
   assert(1 == requests[0].request.version_minor);
 
 
 
   // three requests - no bodies
-  assert(test_multiple3(&req1, &req2, &req3));
+  assert( test_multiple3(&get_no_headers_no_body, &get_one_header_no_body, &get_no_headers_no_body));
 
   // three requests - one body
-  assert( test_multiple3(&req1, &req4, &req3));
+  assert( test_multiple3(&get_no_headers_no_body, &get_funky_content_length_body_hello, &get_no_headers_no_body));
 
   // three requests with bodies -- last is chunked
-  assert( test_multiple3(&req4, &req5, &req6));
+  assert( test_multiple3(&get_funky_content_length_body_hello, &post_one_header_body_world, &post_chunked_all_your_base));
 
   // three chunked requests
-  assert( test_multiple3(&req7, &req6, &req8));
+  assert( test_multiple3(&two_chunks_mult_zero_end, &post_chunked_all_your_base, &chunked_w_trailing_headers));
 
 
-  assert(test_scan2(&req1, &req2, &req3));
-  assert(test_scan2(&req4, &req5, &req6));
-  assert(test_scan2(&req7, &req8, &req9));
+  assert(test_scan2(&get_no_headers_no_body, &get_one_header_no_body, &get_no_headers_no_body));
+  assert(test_scan2(&get_funky_content_length_body_hello, &post_one_header_body_world, &post_chunked_all_your_base));
+  assert(test_scan2(&two_chunks_mult_zero_end, &chunked_w_trailing_headers, &chunked_w_bullshit_after_length));
 
-  assert(test_scan3(&req1, &req2, &req3));
-  assert(test_scan3(&req4, &req5, &req6));
-  assert(test_scan3(&req7, &req8, &req9));
+  assert(test_scan3(&get_no_headers_no_body, &get_one_header_no_body, &get_no_headers_no_body));
+  assert(test_scan3(&get_funky_content_length_body_hello, &post_one_header_body_world, &post_chunked_all_your_base));
+  assert(test_scan3(&two_chunks_mult_zero_end, &chunked_w_trailing_headers, &chunked_w_bullshit_after_length));
 
 
   printf("okay\n");
