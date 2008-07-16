@@ -1,4 +1,5 @@
 #include "parser.h"
+
 #include <stdio.h>
 #include <assert.h>
 #include <string.h>
@@ -157,6 +158,10 @@ static ebb_element* eip_pop
   action use_chunked_encoding {
     //printf("use chunked encoding\n");
     CURRENT->transfer_encoding = EBB_CHUNKED;
+  }
+
+  action expect_continue {
+    CURRENT->expect_continue = TRUE;
   }
 
   action trailer {
@@ -340,6 +345,9 @@ static ebb_element* eip_pop
   te = "Transfer-Encoding"i %write_field %use_chunked_encoding head_sep
        "identity"i >mark %use_identity_encoding %write_value;
 
+  expect = "Expect"i %write_field head_sep
+       "100-continue"i >mark %expect_continue %write_value;
+
   t =  "Trailer"i %write_field head_sep
         field_value >mark %trailer %write_value;
 
@@ -347,6 +355,7 @@ static ebb_element* eip_pop
 
   header  = cl     @(headers,4)
           | te     @(headers,4)
+          | expect @(headers,4)
           | t      @(headers,4)
           | rest   @(headers,1)
           ;
@@ -511,10 +520,11 @@ int ebb_parser_is_finished
   return parser->cs == ebb_parser_first_final;
 }
 
-void ebb_request_init
-  ( ebb_request *request
+void ebb_parser_request_init
+  ( ebb_parser_request *request
   )
 {
+  request->expect_continue = FALSE;
   request->eating_body = 0;
   request->body_read = 0;
   request->content_length = 0;

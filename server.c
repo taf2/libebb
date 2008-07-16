@@ -11,21 +11,9 @@ static void set_nonblock
   assert(0 <= r && "Setting socket non-block failed!");
 }
 
-/** 
- * Must call this after ebb_buf->save callback has been called.
- * Allows you do to do async save operations (like writing to file).
- * ebb_buf->save, like all callbacks, MUST be non-blocking.  
- */
-void ebb_buf_save_finished
-  ( ebb_buf *buf
-  )
-{
-  ;
-}
-
 
 /* Internal callback 
- * called by request->read_watcher
+ * called by connection->read_watcher
  */
 static void on_readable 
   ( struct ev_loop *loop
@@ -33,158 +21,42 @@ static void on_readable
   , int revents
   )
 {
-  ebb_request *request = (ebb_request*)(watcher->data);
+  ebb_request *connection = (ebb_connection*)(watcher->data);
 
-  if(request->has_read_head)
-    if(request->headers.chunked_encoding) 
-      goto read_body_chunked;
-    else
-      goto read_body_normal;
-  else
-    goto read_header;
-
-/* read the header into request->header_buf. overflow is not tolerated.
- *
- */
-read_header:
-  if(EBB_MAX_HEADER_SIZE <= request->read) {
-    /* header buffer overflow. increase EBB_MAX_HEADER_SIZE? */
-    goto error;
-  }
+  ebb_buf *buf = NULL;
+  if(connection->new_buf)
+    buf = connection->new_buf(connection);
+  if(buf == NULL)
+    return;
   
-  ssize_t read = recv( request->connection->fd
-                     , request->header_buf + request->read
-                     , EBB_MAX_HEADER_SIZE - request->read
+  ssize_t read = recv( connection->fd
+                     , buf->base
+                     , buf->len
                      , 0
                      );
 
   if(read < 0) goto error;
-  if(read == 0) goto error; /* XXX is this the right action to take for read==0 ? */
-  request->read += read;
+  /* XXX is this the right action to take for read==0 ? */
+  if(read == 0) goto error; 
 
   ev_timer_again(loop, watcher);
 
-  request_headers_parse( &request->headers
-                       , request->header_buf
-                       , request->read
-                       );
+  ebb_parser_execute( &connection->parser
+                    , buf->base
+                    , read
+                    );
 
-  if(request_headers_has_error(&request->headers)) 
-    goto error;
+  /* parse error? just drop the client. screw the 400 response */
+  if(request_headers_has_error(&request->headers)) goto error;
 
-  if(!request_headers_is_finished(&request->headers))
-    return;
+  if(buf->finished) 
+    buf->finished(buf);
 
-  /* otherwise we're finished */
-
-  request->has_read_head = TRUE;
-
-  assert(request->read >= request->headers.nread);
-  unsigned int left_over = request->read - request->headers.nread;
-  
-  if(left_over > 0) {
-    if(request->headers.chunked)
-      goto read_body_chunked;
-    else
-      goto read_body_normal;
-  }
-  if(content_length == 0 && left_over > 0)
-  if(request->headers.method == EBB_GET || request->headers.method == EBB_HEAD) {
-    ev_io_stop(&request->read_watcher);
-    /* start a new requestuest with left_over? */
-    assert(left_over == 0 && "left_over == 0 for get/head. ");
-     
-  } else {
-    unsigned int left_over = request->read - request->headers.len;
-    ebb_buf *buf = request->get_buf(request, left_over);
-    memcpy(buf->buf, request->header_buf + request->headers.len, left_over);
-    request->body = buf;
-  }
-
-recv_unknown_amount:
-  ebb_recv_buf *recv_buf = NULL;
-
-read_body_chunked:
-  assert(0 && "Not Implemented");
   return;
-
-read_body_normal:
-  unsigned int needed;
-
-  if(request->headers->content_length > 0) {
-    needed = request->headers->content_length - request->read;
-    buf = request->get_buf(request, needed);
-  } else {
-    /* need a buf but unknown size */
-    buf = request->get_buf(request, 0);
-  }
-
-  if(buf == NULL) goto error;
-
-  assert(buf->max_len > buf->len);
-
-  ssize_t read = recv( request->connection->fd
-                     , buf->buf + buf->len
-                     , buf->max_len - buf->len
-                     , 0
-                     );
-  if(read < 0) goto error;
-  if(read == 0) goto error; /* XXX is this the right action to take for read==0 ? */
-  buf->len += read;
-  request->read += read;
-
-  ev_timer_again( request->connection->server->loop
-                , &request->connection->timeout_watcher
-                );
-
-  if(request->headers.content_length > 0) {
-    if(request->read - request->header_buf.len == request->headers->content_length)
-      finished!
-  } else {
-  }
-  return;
-
 error:
+  ebb_connection_close(connection);
 }
 
-/* Internal callback 
- * Called by when a connection sends a new request.
- * Seperated from on_connection() because Keep-Alive connections can have
- * multiple requests
- * this is callback might be called multiple times per connection.
- */
-static void on_request 
-  ( struct ev_loop *loop
-  , ev_io *watcher
-  , int revents
-  )
-{
-  ebb_connection *connection = (ebb_connection*)(watcher->data);
-  
-  assert(connection->open);
-  assert(connection->server->listening);
-  assert(connection->server->loop == loop);
-  assert(&connection->read_watcher == watcher);
-
-  ev_io_stop(loop, watcher);
-
-  ebb_request *request = NULL;
-  if(connection->new_request)
-    request = connection->new_request(connection);
-  if(request == NULL) {
-    return;
-  }
-
-  request->connection = connection;
-  ev_io_set(&request->read_watcher, connection->fd, EV_READ | EV_ERROR);
-  /* XXX: more reason for connections to have special error watchers */
-  ev_io_start(loop, &request->read_watcher);
-  /* XXX: the callback for the read_watcher 
-   * should be called immediately? or should i call it manually?
-   */
-
-  ev_timer_again(loop, &connection->timeout_watcher);
-}
 
 /* Internal callback 
  * Called by server->connection_watcher.
@@ -208,7 +80,7 @@ static void on_connection
   }
   
   struct sockaddr_in addr; // connector's address information
-  socklen_t addr_len = sizeof(their_addr); 
+  socklen_t addr_len = sizeof(addr); 
   int fd = accept( server->fd
                  , (struct sockaddr*) & addr
                  , & addr_len
@@ -233,44 +105,15 @@ static void on_connection
   memcpy(&connection->sockaddr, &addr, addr_len);
   
   if(server->port[0] != '\0')
-    connection->ip = inet_ntoa(addr.sin_addr);  
+    connection->ip = inet_ntoa(connneciton->sockaddr.sin_addr);  
 
   /* Note: not starting the write watcher until there is data to be written */
-  ev_io_set(&connection->write_watcher,   connection->fd, EV_WRITE);
-  ev_io_set(&connection->request_watcher, connection->fd, EV_READ | EV_ERROR);
+  ev_io_set(&connection->write_watcher, connection->fd, EV_WRITE);
+  ev_io_set(&connection->read_watcher, connection->fd, EV_READ | EV_ERROR);
   /* XXX: seperate error watcher? */
 
-  ev_io_start(loop, &connection->request_watcher);
+  ev_io_start(loop, &connection->read_watcher);
   ev_timer_start(loop, &connection->timeout_watcher);
-}
-
-
-static ebb_request* request_new
-  ( ebb_connection *connection
-  , const char *intial_data
-  , size_t initial_data_len 
-  )
-{
-  ebb_request *request = connection->request_handler(connection);
-
-  if(request == NULL) {
-    return NULL;
-  }
-
-  request->connection = connection; 
-
-  assert(initial_data_len < EBB_MAX_HEADER_SIZE);
-
-  memcpy(request->header_buf, initial_data, initial_data_len);
-  request->read = intial_data_len;
-
-  request->read_watcher.data = request;
-  ev_init(&request->read_watcher, read_request);
-  ev_io_set(&request->read_watcher, connection->fd, EV_READ | EV_ERROR);
-  ev_io_start(connection->loop, &request->read_watcher);
-  /* Note, not starting the read_watcher until there is something to be
-   * a request is made
-   */
 }
 
 /**
@@ -283,6 +126,8 @@ int ebb_server_listen_on_fd
   , const int sfd 
   )
 {
+  assert(server->listening == FALSE);
+
   if (listen(sfd, EBB_MAX_CLIENTS) < 0) {
     perror("listen()");
     return -1;
@@ -291,7 +136,6 @@ int ebb_server_listen_on_fd
   set_nonblock(sfd); /* XXX superfluous? */
   
   server->fd = sfd;
-  assert(server->listening == FALSE);
   server->listening = TRUE;
   
   ev_io_set (&server->connection_watcher, server->fd, EV_READ | EV_ERROR);
@@ -363,7 +207,7 @@ void ebb_server_unlisten
   if(server->listening) {
     ev_io_stop(server->loop, &server->connection_watcher);
     close(server->fd);
-    server->port = "\0";
+    server->port[0] = '\0';
     server->listening = FALSE;
   }
 }
@@ -383,7 +227,7 @@ void ebb_server_init
 {
   server->loop = loop;
   server->listening = FALSE;
-  server->port = "\0";
+  server->port[0] = '\0';
   server->fd = -1;
   server->connection_watcher.data = server;
   ev_init (&server->connection_watcher, on_connection);
@@ -413,44 +257,20 @@ void ebb_connection_init
 {
   connection->fd = -1;
   connection->server = NULL;
-  connection->ip = "\0";
+  connection->ip = NULL;
   connection->open = FALSE;
   connection->timeout = timeout;
   
   connection->write_watcher.data = connection;
   ev_init (&connection->write_watcher, on_writable);
 
-  connection->request_watcher.data = connection;
-  ev_init(&connection->request_watcher, on_request);
+  connection->read_watcher.data = connection;
+  ev_init(&connection->read_watcher, on_readable);
 
   connection->timeout_watcher.data = connection;  
   ev_timer_init(&connection->timeout_watcher, on_timeout, timeout, 0);
 
-
-  connection->new_request = NULL;
   connection->free = NULL;
   connection->data = NULL;
 }
 
-/** 
- * Initialze ebb_request structure. Call this from your connection->new_request
- * callback
- */
-void ebb_request_init
-  ( ebb_request *request
-  ) 
-{
-  request->connection = NULL;
-  request_headers_init(&request->headers);
-  request->header_buf[0] = '\0';
-  request->read = 0;
-  request->read_body_normal = 0;
-  request->has_read_head = FALSE;
-
-  request->read_watcher.data = request;
-  ev_init(&request->read_watcher, on_readable);
-
-  request->new_buf = NULL;
-  request->free = NULL;
-  request->data = NULL;
-}

@@ -18,7 +18,7 @@ struct request_data {
   int num_headers;
   char* header_fields[500];
   char* header_values[500];
-  ebb_request request;
+  ebb_parser_request request;
 };
 static struct request_data requests[5];
 static int num_requests;
@@ -215,7 +215,7 @@ ebb_element* new_element ()
   return el;
 }
 
-ebb_request* new_request ()
+ebb_parser_request* new_request ()
 {
   requests[num_requests].num_headers = 0;
   requests[num_requests].request_method[0] = 0;
@@ -224,8 +224,8 @@ ebb_request* new_request ()
   requests[num_requests].fragment[0] = 0;
   requests[num_requests].query_string[0] = 0;
   requests[num_requests].body[0] = 0;
-  ebb_request *r = &requests[num_requests].request;
-  ebb_request_init(r);
+  ebb_parser_request *r = &requests[num_requests].request;
+  ebb_parser_request_init(r);
  // printf("new request %d\n", num_requests);
   return r;
 }
