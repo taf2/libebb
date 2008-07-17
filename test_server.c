@@ -8,6 +8,7 @@
 
 static int c = 0;
 
+static ebb_connection connections[EBB_MAX_CONNECTIONS];
 
 static void request_complete(ebb_request *request)
 {
@@ -30,12 +31,18 @@ static int on_writable(ebb_connection *connection)
 
 ebb_connection* new_connection(ebb_server *server, struct sockaddr_in *addr)
 {
-  ebb_connection *connection = malloc(sizeof(ebb_connection));
+  int i;
+  for(i = 0; i < EBB_MAX_CONNECTIONS; i++)
+    if(!connections[i].open)
+      break;
+  if(i == EBB_MAX_CONNECTIONS)
+    return NULL;
+
+  ebb_connection *connection = &connections[i];
 
   ebb_connection_init(connection, 30.0);
   connection->parser.request_complete = request_complete;
   connection->on_writable = on_writable;
-  connection->free = (void (*)(ebb_connection*))free;
   
   printf("connection: %d\n", c++);
   return connection;
@@ -44,15 +51,17 @@ ebb_connection* new_connection(ebb_server *server, struct sockaddr_in *addr)
 int main() 
 {
   struct ev_loop *loop = ev_default_loop(0);
-  ebb_server *server;
+  ebb_server server;
 
-  server = malloc(sizeof(ebb_server));
+  int i;
+  for(i = 0; i < EBB_MAX_CONNECTIONS; i++)
+    connections[i].open = 0;
 
-  ebb_server_init(server, loop);
-  server->new_connection = new_connection;
+  ebb_server_init(&server, loop);
+  server.new_connection = new_connection;
 
   printf("test_server listening on port 5000\n");
-  ebb_server_listen_on_port(server, 5000);
+  ebb_server_listen_on_port(&server, 5000);
   ev_loop(loop, 0);
 
   return 0;

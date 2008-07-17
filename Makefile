@@ -20,7 +20,7 @@ test_request_parser: test_request_parser.c request_parser.o
 	gcc ${GCC_OPTS}  $< request_parser.o -o $@
 
 test_server: test_server.c server.o request_parser.o
-	gcc ${GCC_OPTS} -L${LIBEV}/lib -lev -I${LIBEV}/include $< server.o request_parser.o -o $@
+	gcc ${GCC_OPTS} -lefence -L${LIBEV}/lib -lev -I${LIBEV}/include $< server.o request_parser.o -o $@
 
 
 .PHONY: doc clean test clobber

@@ -186,7 +186,7 @@ int ebb_server_listen_on_fd
 {
   assert(server->listening == FALSE);
 
-  if (listen(sfd, EBB_MAX_CLIENTS) < 0) {
+  if (listen(sfd, EBB_MAX_CONNECTIONS) < 0) {
     perror("listen()");
     return -1;
   }
@@ -371,9 +371,6 @@ void ebb_connection_close
     ev_io_stop(connection->server->loop, &connection->write_watcher);
     ev_timer_stop(connection->server->loop, &connection->timeout_watcher);
     connection->open = FALSE;
-    
-    if(connection->free)
-      connection->free(connection);
   }
 }
 

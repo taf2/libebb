@@ -5,7 +5,7 @@
 #include <ev.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#define EBB_MAX_CLIENTS 1024
+#define EBB_MAX_CONNECTIONS 1024
 
 #define EBB_AGAIN 0
 #define EBB_STOP 1
@@ -70,7 +70,6 @@ struct ebb_connection {
   ebb_buf* (*new_buf) (ebb_connection*); 
   int (*on_writable) (ebb_connection*); /* Returns EBB_STOP or EBB_AGAIN */
   int (*on_timeout) (ebb_connection*); /* Returns EBB_STOP or EBB_AGAIN */
-  void (*free) (ebb_connection*);
   void *data;
 };
 
