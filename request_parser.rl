@@ -3,10 +3,12 @@
 #include <stdio.h>
 #include <assert.h>
 #include <string.h>
+#include <stdlib.h> /* for the default methods */
 
-#ifndef MIN
-# define MIN(a,b) (a < b ? a : b)
-#endif
+#define TRUE 1
+#define FALSE 0
+#define MIN(a,b) (a < b ? a : b)
+
 #define REMAINING (pe - p)
 #define CURRENT (parser->current_request)
 #define CONTENT_LENGTH (parser->current_request->content_length)
@@ -78,14 +80,13 @@ static ebb_element* eip_pop
     last->len = p - last->base;  
 
     if(parser->header_handler)
-      parser->header_handler( parser->data
+      parser->header_handler( CURRENT
                             , parser->header_field_element
                             , eip
+                            , parser->data
                             );
-    if(parser->header_field_element->free)
-      parser->header_field_element->free(parser->header_field_element);
-    if(eip->free)
-      eip->free(eip);
+    free_element(parser->header_field_element);
+    free_element(eip);
     eip = parser->header_field_element = NULL;
   }
 
@@ -95,9 +96,8 @@ static ebb_element* eip_pop
     last = ebb_element_last(eip);
     last->len = p - last->base;  
     if(parser->request_uri)
-      parser->request_uri(parser->data, eip);
-    if(eip->free)
-      eip->free(eip);
+      parser->request_uri(CURRENT, eip, parser->data);
+    free_element(eip);
   }
 
   action fragment { 
@@ -106,9 +106,8 @@ static ebb_element* eip_pop
     last = ebb_element_last(eip);
     last->len = p - last->base;  
     if(parser->fragment)
-      parser->fragment(parser->data, eip);
-    if(eip->free)
-      eip->free(eip);
+      parser->fragment(CURRENT, eip, parser->data);
+    free_element(eip);
   }
 
   action query_string { 
@@ -117,9 +116,8 @@ static ebb_element* eip_pop
     last = ebb_element_last(eip);
     last->len = p - last->base;  
     if(parser->query_string)
-      parser->query_string(parser->data, eip);
-    if(eip->free)
-      eip->free(eip);
+      parser->query_string(CURRENT, eip, parser->data);
+    free_element(eip);
   }
 
   action request_path {
@@ -128,9 +126,8 @@ static ebb_element* eip_pop
     last = ebb_element_last(eip);
     last->len = p - last->base;  
     if(parser->request_path)
-      parser->request_path(parser->data, eip);
-    if(eip->free)
-      eip->free(eip);
+      parser->request_path(CURRENT, eip, parser->data);
+    free_element(eip);
   }
 
   action request_method { 
@@ -139,9 +136,8 @@ static ebb_element* eip_pop
     last = ebb_element_last(eip);
     last->len = p - last->base;
     if(parser->request_method)
-      parser->request_method(parser->data, eip);
-    if(eip->free)
-      eip->free(eip);
+      parser->request_method(CURRENT, eip, parser->data);
+    free_element(eip);
   }
 
   action content_length {
@@ -199,12 +195,12 @@ static ebb_element* eip_pop
     //printf("chunk_size: %d\n", parser->chunk_size);
     if(parser->chunk_size > REMAINING) {
       parser->eating = TRUE;
-      parser->body_handler(parser->data, p, REMAINING);
+      parser->body_handler(CURRENT, p, REMAINING, parser->data);
       parser->chunk_size -= REMAINING;
       fhold; 
       fbreak;
     } else {
-      parser->body_handler(parser->data, p, parser->chunk_size);
+      parser->body_handler(CURRENT, p, parser->chunk_size, parser->data);
       p += parser->chunk_size;
       parser->chunk_size = 0;
       parser->eating = FALSE;
@@ -216,11 +212,13 @@ static ebb_element* eip_pop
   action end_chunked_body {
     //printf("end chunked body\n");
     if(parser->request_complete)
-      parser->request_complete(parser->data);
+      parser->request_complete(CURRENT, parser->data);
     fret; // goto Request; 
   }
 
   action start_req {
+    if(CURRENT && CURRENT->free)
+      CURRENT->free(CURRENT);
     CURRENT = parser->new_request_info(parser->data);
   }
 
@@ -236,7 +234,7 @@ static ebb_element* eip_pop
       if( CURRENT->content_length == 0) {
 
         if( parser->request_complete )
-          parser->request_complete(parser->data);
+          parser->request_complete(CURRENT, parser->data);
 
 
       } else if( CURRENT->content_length < REMAINING ) {
@@ -249,7 +247,7 @@ static ebb_element* eip_pop
          */
         p += 1;
         if( parser->body_handler )
-          parser->body_handler(parser->data, p, CURRENT->content_length); 
+          parser->body_handler(CURRENT, p, CURRENT->content_length, parser->data); 
 
         p += CURRENT->content_length;
         CURRENT->body_read = CURRENT->content_length;
@@ -257,7 +255,7 @@ static ebb_element* eip_pop
         assert(0 <= REMAINING);
 
         if( parser->request_complete )
-          parser->request_complete(parser->data);
+          parser->request_complete(CURRENT, parser->data);
 
         fhold;
 
@@ -274,7 +272,7 @@ static ebb_element* eip_pop
         size_t eat = REMAINING;
 
         if( parser->body_handler && eat > 0)
-          parser->body_handler(parser->data, p, eat); 
+          parser->body_handler(CURRENT, p, eat, parser->data); 
 
         p += eat;
         CURRENT->body_read += eat;
@@ -384,7 +382,40 @@ static ebb_element* eip_pop
 
 %% write data;
 
-#define COPYSTACK(dest, src)  for(i = 0; i < PARSER_STACK_SIZE; i++) { dest[i] = src[i]; }
+#define COPYSTACK(dest, src)  for(i = 0; i < EBB_RAGEL_STACK_SIZE; i++) { dest[i] = src[i]; }
+
+/* calls the element's free for each item in the list */
+static void free_element
+  ( ebb_element *element
+  )
+{
+  if(element) {
+    free_element(element->next);
+    element->next = NULL;
+    if(element->free) 
+      element->free(element);
+  }
+}
+
+static ebb_element *default_new_element
+  ( void *data
+  )
+{
+  ebb_element *element = malloc(sizeof(ebb_element));
+  ebb_element_init(element);
+  element->free = (void (*)(ebb_element*))free;
+  return element; 
+}
+
+static ebb_request_info* default_new_request_info
+  ( void *data
+  )
+{
+  ebb_request_info *request_info = malloc(sizeof(ebb_request_info));
+  ebb_request_info_init(request_info);
+  request_info->free = (void (*)(ebb_request_info*))free;
+  return request_info; 
+}
 
 void ebb_request_parser_init
   ( ebb_request_parser *parser
@@ -394,7 +425,7 @@ void ebb_request_parser_init
 
   int cs = 0;
   int top = 0;
-  int stack[PARSER_STACK_SIZE];
+  int stack[EBB_RAGEL_STACK_SIZE];
   %% write init;
   parser->cs = cs;
   parser->top = top;
@@ -403,14 +434,13 @@ void ebb_request_parser_init
   parser->chunk_size = 0;
   parser->eating = 0;
   
-
   parser->eip_stack[0] = NULL;
   parser->current_request = NULL;
   parser->header_field_element = NULL;
 
+  parser->new_element = default_new_element;
+  parser->new_request_info = default_new_request_info;
 
-  parser->new_element = NULL;
-  parser->new_request_info = NULL;
   parser->request_complete = NULL;
   parser->body_handler = NULL;
   parser->header_handler = NULL;
@@ -434,7 +464,7 @@ size_t ebb_request_parser_execute
   int i, cs = parser->cs;
 
   int top = parser->top;
-  int stack[PARSER_STACK_SIZE];
+  int stack[EBB_RAGEL_STACK_SIZE];
   COPYSTACK(stack, parser->stack);
 
   assert(parser->new_element && "undefined callback");
@@ -454,7 +484,7 @@ size_t ebb_request_parser_execute
     if(eat == parser->chunk_size) {
       parser->eating = FALSE;
     }
-    parser->body_handler(parser->data, p, eat);
+    parser->body_handler(CURRENT, p, eat, parser->data);
     p += eat;
     parser->chunk_size -= eat;
     //printf("eat: %d\n", eat);
@@ -468,13 +498,13 @@ size_t ebb_request_parser_execute
     //printf("eat normal body (before parse)\n");
     size_t eat = MIN(len, CURRENT->content_length - CURRENT->body_read);
 
-    parser->body_handler(parser->data, p, eat);
+    parser->body_handler(CURRENT, p, eat, parser->data);
     p += eat;
     CURRENT->body_read += eat;
 
     if(CURRENT->body_read == CURRENT->content_length) {
       if(parser->request_complete)
-        parser->request_complete(parser->data);
+        parser->request_complete(CURRENT, parser->data);
       CURRENT->eating_body = FALSE;
     }
   }
@@ -539,7 +569,7 @@ void ebb_element_init
   ) 
 {
   element->base = NULL;
-  element->len = 0;
+  element->len  = -1;
   element->next = NULL;
   element->free = NULL;
 }
@@ -548,6 +578,11 @@ ebb_element* ebb_element_last
   ( ebb_element *element
   )
 {
+  /* TODO: currently a linked list but could be 
+   * done with a circular ll for * O(1) access
+   * probably not a big deal as it is since these 
+   * never get very long 
+   */
   for( ; element->next; element = element->next) {;}
   return element;
 }

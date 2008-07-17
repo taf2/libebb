@@ -4,6 +4,9 @@
 #include <stdio.h>
 #include <string.h>
 
+#define TRUE 1
+#define FALSE 0
+
 static ebb_request_parser parser;
 struct request_data {
   const char *raw;
@@ -242,27 +245,27 @@ void request_complete()
   num_requests++;
 }
 
-void request_method_cb(void *data, ebb_element *el)
+void request_method_cb(ebb_request_info *info, ebb_element *el, void *data)
 {
   ebb_element_strcpy(el, requests[num_requests].request_method);
 }
 
-void request_path_cb(void *data, ebb_element *el)
+void request_path_cb(ebb_request_info *info, ebb_element *el, void *data)
 {
   ebb_element_strcpy(el, requests[num_requests].request_path);
 }
 
-void request_uri_cb(void *data, ebb_element *el)
+void request_uri_cb(ebb_request_info *info, ebb_element *el, void *data)
 {
   ebb_element_strcpy(el, requests[num_requests].request_uri);
 }
 
-void fragment_cb(void *data, ebb_element *el)
+void fragment_cb(ebb_request_info *info, ebb_element *el, void *data)
 {
   ebb_element_strcpy(el, requests[num_requests].fragment);
 }
 
-void header_handler(void *data, ebb_element *field, ebb_element *value)
+void header_handler(ebb_request_info *info, ebb_element *field, ebb_element *value, void *data)
 {
   char *field_s, *value_s;
 
@@ -283,13 +286,13 @@ void header_handler(void *data, ebb_element *field, ebb_element *value)
 }
 
 
-void query_string_cb(void *data, ebb_element *el)
+void query_string_cb(ebb_request_info *info, ebb_element *el, void *data)
 {
   ebb_element_strcpy(el, requests[num_requests].query_string);
 }
 
 
-void body_handler(void *data, const char *p, size_t len)
+void body_handler(ebb_request_info *info, const char *p, size_t len, void *data)
 {
   strncat(requests[num_requests].body, p, len);
  // printf("body_handler: '%s'\n", requests[num_requests].body);

@@ -10,11 +10,15 @@
 #include <error.h>
 #include <stdio.h>      /* perror */
 #include <errno.h>      /* perror */
+#include <stdlib.h> /* for the default methods */
 
 #include <ev.h>
 
-#include "ebb.h"
+#include "server.h"
 #include "request_parser.h"
+
+#define TRUE 1
+#define FALSE 0
 
 static void set_nonblock (int fd)
 {
@@ -81,15 +85,14 @@ static void on_readable
   ebb_buf *buf = NULL;
   if(connection->new_buf)
     buf = connection->new_buf(connection);
-  if(buf == NULL)
-    return;
-  
+  if(buf == NULL) goto error; 
+
   ssize_t read = recv( connection->fd
                      , buf->base
                      , buf->len
                      , 0
                      );
-
+  printf("read buf %s\n", buf->base);
   if(read < 0) goto error;
   /* XXX is this the right action to take for read==0 ? */
   if(read == 0) goto error; 
@@ -293,6 +296,14 @@ void ebb_server_init
   server->data = NULL;
 }
 
+static ebb_buf* default_new_buf
+  ( ebb_connection *connection
+  )
+{
+  ebb_buf *buf = malloc(sizeof(ebb_buf));
+  return buf;
+}
+
 /**
  * Initialize an ebb_connection structure.
  * After calling ebb_connection_init set the callback 
@@ -329,7 +340,7 @@ void ebb_connection_init
   connection->timeout_watcher.data = connection;  
   ev_timer_init(&connection->timeout_watcher, on_timeout, timeout, 0);
 
-  connection->new_buf = NULL;
+  connection->new_buf = default_new_buf;
   connection->on_timeout = NULL;
   connection->on_writable = NULL;
   connection->data = NULL;

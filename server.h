@@ -1,5 +1,5 @@
-#ifndef ebb_h
-#define ebb_h
+#ifndef server_h
+#define server_h
 
 #include "request_parser.h"
 #include <ev.h>
@@ -10,11 +10,9 @@
 #define EBB_AGAIN 0
 #define EBB_STOP 1
 
-typedef struct ebb_buf ebb_buf;
-typedef struct ebb_server ebb_server;
+typedef struct ebb_buf        ebb_buf;
+typedef struct ebb_server     ebb_server;
 typedef struct ebb_connection ebb_connection;
-typedef struct ebb_request ebb_request;
-typedef struct ebb_res ebb_res;
 
 struct ebb_buf {
   char *base;
@@ -30,9 +28,8 @@ struct ebb_server {
   ev_io connection_watcher;    /* private */
   unsigned listening:1;        /* ro */
 
-  /* public */
+  /* Public */
   ebb_connection* (*new_connection) (ebb_server*, struct sockaddr_in*);
-  void (*free) (ebb_server*);
   void *data;
 };
 
@@ -55,7 +52,6 @@ void ebb_server_unlisten
   ( ebb_server *server
   );
 
-
 struct ebb_connection {
   int fd;                      /* ro */
   struct sockaddr_in sockaddr; /* ro */
@@ -68,12 +64,11 @@ struct ebb_connection {
   ev_io write_watcher;         /* private */
   ev_timer timeout_watcher;    /* private */
   ebb_request_parser *parser;  /* private */
-
+  
+  /* Public */
   ebb_buf* (*new_buf) (ebb_connection*); 
-  /* Returns EBB_STOP or EBB_AGAIN */
-  int (*on_writable) (ebb_connection*); 
-  /* Returns EBB_STOP or EBB_AGAIN */
-  int (*on_timeout) (ebb_connection*); 
+  int (*on_writable) (ebb_connection*); /* Returns EBB_STOP or EBB_AGAIN */
+  int (*on_timeout) (ebb_connection*); /* Returns EBB_STOP or EBB_AGAIN */
   void *data;
 };
 
@@ -90,6 +85,5 @@ void ebb_connection_close
 void ebb_connection_start_write_watcher 
   ( ebb_connection *
   );
-
 
 #endif
