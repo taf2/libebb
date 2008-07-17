@@ -20,9 +20,9 @@ ebb_buf* new_buf() {
   return buf; 
 }
 
-static void request_complete()
+static void request_complete(ebb_request_info *info, void *data)
 {
-  printf("request done!");
+  printf("request done!\n");
   ebb_connection_close(connection);
 }
 

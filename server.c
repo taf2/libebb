@@ -92,7 +92,6 @@ static void on_readable
                      , buf->len
                      , 0
                      );
-  printf("read buf %s\n", buf->base);
   if(read < 0) goto error;
   /* XXX is this the right action to take for read==0 ? */
   if(read == 0) goto error; 
@@ -157,6 +156,7 @@ static void on_connection
   connection->fd = fd;
   connection->open = TRUE;
   connection->server = server;
+
   memcpy(&connection->sockaddr, &addr, addr_len);
   
   if(server->port[0] != '\0')

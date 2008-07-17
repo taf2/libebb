@@ -334,7 +334,7 @@ static ebb_element* eip_pop
   field_name = ( token -- ":" )+;
   field_value = ((any - " ") any*)?;
 
-  head_sep = ":" " "**;
+  head_sep = ":" " "*;
   message_header = field_name head_sep field_value :> CRLF;
 
   cl = "Content-Length"i %write_field  head_sep
