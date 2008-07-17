@@ -24,6 +24,50 @@ struct request_data {
 static struct request_data requests[5];
 static int num_requests;
 
+const struct request_data curl_get = 
+  { raw: "GET /test HTTP/1.1\r\nUser-Agent: curl/7.18.0 (i486-pc-linux-gnu) libcurl/7.18.0 OpenSSL/0.9.8g zlib/1.2.3.3 libidn/1.1\r\nHost: 0.0.0.0:5000\r\nAccept: */*\r\n\r\n"
+  , request_method: "GET"
+  , query_string: ""
+  , fragment: ""
+  , request_path: "/test"
+  , request_uri: "/test"
+  , num_headers: 3
+  , header_fields: { "User-Agent", "Host", "Accept" }
+  , header_values: { "curl/7.18.0 (i486-pc-linux-gnu) libcurl/7.18.0 OpenSSL/0.9.8g zlib/1.2.3.3 libidn/1.1", "0.0.0.0:5000", "*/*" }
+  , body: ""
+  };
+
+const struct request_data firefox_get = 
+  { raw: "GET /favicon.ico HTTP/1.1\r\nHost: 0.0.0.0:5000\r\nUser-Agent: Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.9) Gecko/2008061015 Firefox/3.0\r\nAccept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\nAccept-Language: en-us,en;q=0.5\r\nAccept-Encoding: gzip,deflate\r\nAccept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.7\r\nKeep-Alive: 300\r\nConnection: keep-alive\r\n\r\n"
+  , request_method: "GET"
+  , query_string: ""
+  , fragment: ""
+  , request_path: "/favicon.ico"
+  , request_uri: "/favicon.ico"
+  , num_headers: 8
+  , header_fields: 
+    { "Host"
+    , "User-Agent"
+    , "Accept"
+    , "Accept-Language"
+    , "Accept-Encoding"
+    , "Accept-Charset"
+    , "Keep-Alive"
+    , "Connection" 
+    }
+  , header_values: 
+    { "0.0.0.0:5000"
+    , "Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.9) Gecko/2008061015 Firefox/3.0"
+    , "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+    , "en-us,en;q=0.5"
+    , "gzip,deflate"
+    , "ISO-8859-1,utf-8;q=0.7,*;q=0.7"
+    , "300"
+    , "keep-alive"
+    }
+  , body: ""
+  };
+
 const struct request_data dumbfuck =
   { raw: "GET /dumbfuck HTTP/1.1\r\naaaaaaaaaaaaa:++++++++++\r\n\r\n"
   , request_method: "GET"
@@ -235,11 +279,12 @@ ebb_request_info* new_request_info ()
   requests[num_requests].body[0] = 0;
   ebb_request_info *r = &requests[num_requests].request;
   ebb_request_info_init(r);
+  r->data = &requests[num_requests];
  // printf("new request %d\n", num_requests);
   return r;
 }
 
-void request_complete()
+void request_complete(ebb_request_info *info, void *data)
 {
  // printf("request complete\n");
   num_requests++;
@@ -269,11 +314,11 @@ void header_handler(ebb_request_info *info, ebb_element *field, ebb_element *val
 {
   char *field_s, *value_s;
 
-  field_s = malloc( ebb_element_len(field) );
+  field_s = malloc( ebb_element_len(field)+1 );
   ebb_element_strcpy( field, field_s);
 
-  value_s = malloc( ebb_element_len(value) );
-  ebb_element_strcpy( value,  value_s);
+  value_s = malloc( ebb_element_len(value)+1 );
+  ebb_element_strcpy( value, value_s);
 
   int nh = requests[num_requests].num_headers;
 
@@ -282,7 +327,7 @@ void header_handler(ebb_request_info *info, ebb_element *field, ebb_element *val
 
   requests[num_requests].num_headers += 1;
 
- // printf("header %s: %s\n", field_s, value_s);
+  //printf("header '%s': '%s'\n", field_s, value_s);
 }
 
 
@@ -544,6 +589,9 @@ int main()
 
   assert(test_error("hello world"));
   assert(test_error("GET / HTP/1.1\r\n\r\n"));
+
+  assert(test_request(&curl_get));
+  assert(test_request(&firefox_get));
 
   // Zed's header tests
 
