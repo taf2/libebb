@@ -1,6 +1,4 @@
-#include "ebb.h"
-#include "request_parser.h"
-#include <ev.h>
+#include <assert.h>
 #include <string.h>
 #include <fcntl.h>
 #include <sys/types.h>
@@ -10,9 +8,13 @@
 #include <arpa/inet.h>   /* inet_ntoa */
 #include <unistd.h>
 #include <error.h>
-#include <assert.h>
 #include <stdio.h>      /* perror */
 #include <errno.h>      /* perror */
+
+#include <ev.h>
+
+#include "ebb.h"
+#include "request_parser.h"
 
 static void set_nonblock (int fd)
 {

@@ -16,7 +16,6 @@ typedef struct ebb_connection ebb_connection;
 typedef struct ebb_request ebb_request;
 typedef struct ebb_res ebb_res;
 
-
 struct ebb_buf {
   char *base;
   size_t len;
@@ -77,6 +76,12 @@ struct ebb_connection {
   int (*on_timeout) (ebb_connection*); 
   void *data;
 };
+
+void ebb_connection_init
+  ( ebb_connection *connection
+  , ebb_request_parser *parser
+  , float timeout
+  );
 
 void ebb_connection_close
   ( ebb_connection *
