@@ -1,47 +1,43 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
 #include <ev.h>
 #include "server.h"
 
-#define BUFFERS 80
-#define SIZE 1024
-static char buffer[BUFFERS*SIZE] = "\0";
 static int c = 0;
-static ebb_connection *connection;
 
-ebb_buf* new_buf() { 
-  if(c > BUFFERS) {
-    printf("no more buffers :(\n");
-    exit(1);
-  }
-  ebb_buf *buf = malloc(sizeof(ebb_buf));
-  buf->base = buffer + SIZE * c++;
-  buf->len = SIZE;
-  return buf; 
+
+static void request_complete(ebb_request *request)
+{
+  ebb_connection_start_write_watcher(request->connection);
+  printf("request done!\n");
 }
 
-static void request_complete(ebb_request_info *info, void *data)
+static int on_writable(ebb_connection *connection)
 {
-  printf("request done!\n");
+  const char *message = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 12\r\n\r\nhello world\n";
+  size_t written = write( connection->fd
+                        , message
+                        , strlen(message)
+                        );
+  printf("wrote %d byte response\n", written);
   ebb_connection_close(connection);
+  return EBB_STOP;
 }
 
 
 ebb_connection* new_connection(ebb_server *server, struct sockaddr_in *addr)
 {
-  connection = malloc(sizeof(ebb_connection));
+  ebb_connection *connection = malloc(sizeof(ebb_connection));
 
-  ebb_request_parser *parser = malloc(sizeof(ebb_request_parser));
-  ebb_request_parser_init(parser); 
-  parser->request_complete = request_complete;
-  //parser->body_handler = body_handler;
-  //parser->body_handler = header_handler;
-
-  ebb_connection_init(connection, parser, 30.0);
-  connection->new_buf = new_buf;
-  //connection->on_writable = on_writable;
+  ebb_connection_init(connection, 30.0);
+  connection->parser.request_complete = request_complete;
+  connection->on_writable = on_writable;
+  connection->free = (void (*)(ebb_connection*))free;
   
-  printf("connection: %d\n", c);
+  printf("connection: %d\n", c++);
   return connection;
 }
 
@@ -55,6 +51,7 @@ int main()
   ebb_server_init(server, loop);
   server->new_connection = new_connection;
 
+  printf("test_server listening on port 5000\n");
   ebb_server_listen_on_port(server, 5000);
   ev_loop(loop, 0);
 

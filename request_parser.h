@@ -3,17 +3,17 @@
 
 #include <sys/types.h> 
 
-typedef struct ebb_request_info ebb_request_info;
+typedef struct ebb_request ebb_request;
 typedef struct ebb_element ebb_element;
 typedef struct ebb_request_parser  ebb_request_parser;
-typedef void (*ebb_element_cb)(ebb_request_info*, ebb_element *, void *data);
+typedef void (*ebb_element_cb)(ebb_request*, ebb_element *);
 
 #define EBB_IDENTITY 0
 #define EBB_CHUNKED  1
 
 #define EBB_RAGEL_STACK_SIZE 10
 
-struct ebb_request_info {
+struct ebb_request {
   size_t content_length;        /* ro - 0 if unknown */
   int transfer_encoding;        /* ro - EBB_IDENTITY or EBB_CHUNKED */
   size_t body_read;             /* ro */
@@ -21,10 +21,11 @@ struct ebb_request_info {
   int expect_continue;          /* ro */
   unsigned int version_major;   /* ro */
   unsigned int version_minor;   /* ro */
+  struct ebb_connection *connection;
 
   /* Public */
   void *data;
-  void (*free)(ebb_request_info*);
+  void (*free)(ebb_request*);
 };
 
 struct ebb_element {
@@ -42,6 +43,7 @@ struct ebb_request_parser {
   int top;                          /* private */
   size_t chunk_size;                /* private */
   unsigned eating:1;                /* private */
+  struct ebb_connection *connection;
 
   /* element in progress stack. 
    * grammar doesn't have more than 3 nested elements
@@ -49,16 +51,16 @@ struct ebb_request_parser {
   ebb_element *eip_stack[3]; 
 
   ebb_element *header_field_element;  /* ro */
-  ebb_request_info *current_request;  /* ro */
+  ebb_request *current_request;  /* ro */
 
   /* Public */
 
   ebb_element* (*new_element)(void *);
-  ebb_request_info* (*new_request_info)(void*);
+  ebb_request* (*new_request)(void*);
 
-  void (*request_complete)(ebb_request_info *, void*);
-  void (*body_handler)(ebb_request_info *, const char *at, size_t length, void*);
-  void (*header_handler)(ebb_request_info *, ebb_element *field, ebb_element *value, void *data);
+  void (*request_complete)(ebb_request *);
+  void (*body_handler)(ebb_request *, const char *at, size_t length);
+  void (*header_handler)(ebb_request *, ebb_element *field, ebb_element *value);
 
   ebb_element_cb request_method;
   ebb_element_cb request_uri;
@@ -87,8 +89,8 @@ int ebb_request_parser_is_finished
   ( ebb_request_parser *parser
   );
 
-void ebb_request_info_init
-  ( ebb_request_info *
+void ebb_request_init
+  ( ebb_request *
   );
 
 void ebb_element_init

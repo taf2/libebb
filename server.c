@@ -98,13 +98,16 @@ static void on_readable
 
   ev_timer_again(loop, &connection->timeout_watcher);
 
-  ebb_request_parser_execute( connection->parser
+  ebb_request_parser_execute( &connection->parser
                             , buf->base
                             , read
                             );
 
   /* parse error? just drop the client. screw the 400 response */
-  if(ebb_request_parser_has_error(connection->parser)) goto error;
+  if(ebb_request_parser_has_error(&connection->parser)) goto error;
+
+  if(buf->free)
+    buf->free(buf);
 
   return;
 error:
@@ -277,8 +280,8 @@ void ebb_server_unlisten
  * After calling ebb_server_init set the callback server->new_connection 
  * and, optionally, callback data server->data 
  *
- * @params server the server to initialize
- * @params loop a libev loop
+ * @param server the server to initialize
+ * @param loop a libev loop
  */
 void ebb_server_init
   ( ebb_server *server
@@ -296,11 +299,22 @@ void ebb_server_init
   server->data = NULL;
 }
 
+static void default_buf_free 
+  ( ebb_buf *buf
+  )
+{
+  free(buf->base);
+  free(buf);
+}
+
 static ebb_buf* default_new_buf
   ( ebb_connection *connection
   )
 {
   ebb_buf *buf = malloc(sizeof(ebb_buf));
+  buf->base = malloc(4*1024);
+  buf->len = 4*1024;
+  buf->free = default_buf_free;
   return buf;
 }
 
@@ -315,12 +329,11 @@ static ebb_buf* default_new_buf
  * be called within the ebb_server->new_connection callback which
  * you supply. 
  *
- * @params connection the connection to initialize
- * @params timeout    the timeout in seconds
+ * @param connection the connection to initialize
+ * @param timeout    the timeout in seconds
  */
 void ebb_connection_init
   ( ebb_connection *connection
-  , ebb_request_parser *parser
   , float timeout
   )
 {
@@ -329,7 +342,9 @@ void ebb_connection_init
   connection->ip = NULL;
   connection->open = FALSE;
   connection->timeout = timeout;
-  connection->parser = parser;
+
+  ebb_request_parser_init( &connection->parser );
+  connection->parser.connection = connection;
   
   connection->write_watcher.data = connection;
   ev_init (&connection->write_watcher, on_writable);
@@ -356,6 +371,9 @@ void ebb_connection_close
     ev_io_stop(connection->server->loop, &connection->write_watcher);
     ev_timer_stop(connection->server->loop, &connection->timeout_watcher);
     connection->open = FALSE;
+    
+    if(connection->free)
+      connection->free(connection);
   }
 }
 

@@ -83,7 +83,7 @@ static ebb_element* eip_pop
       parser->header_handler( CURRENT
                             , parser->header_field_element
                             , eip
-                            , parser->data
+                            
                             );
     free_element(parser->header_field_element);
     free_element(eip);
@@ -96,7 +96,7 @@ static ebb_element* eip_pop
     last = ebb_element_last(eip);
     last->len = p - last->base;  
     if(parser->request_uri)
-      parser->request_uri(CURRENT, eip, parser->data);
+      parser->request_uri(CURRENT, eip);
     free_element(eip);
   }
 
@@ -106,7 +106,7 @@ static ebb_element* eip_pop
     last = ebb_element_last(eip);
     last->len = p - last->base;  
     if(parser->fragment)
-      parser->fragment(CURRENT, eip, parser->data);
+      parser->fragment(CURRENT, eip);
     free_element(eip);
   }
 
@@ -116,7 +116,7 @@ static ebb_element* eip_pop
     last = ebb_element_last(eip);
     last->len = p - last->base;  
     if(parser->query_string)
-      parser->query_string(CURRENT, eip, parser->data);
+      parser->query_string(CURRENT, eip);
     free_element(eip);
   }
 
@@ -126,7 +126,7 @@ static ebb_element* eip_pop
     last = ebb_element_last(eip);
     last->len = p - last->base;  
     if(parser->request_path)
-      parser->request_path(CURRENT, eip, parser->data);
+      parser->request_path(CURRENT, eip);
     free_element(eip);
   }
 
@@ -136,7 +136,7 @@ static ebb_element* eip_pop
     last = ebb_element_last(eip);
     last->len = p - last->base;
     if(parser->request_method)
-      parser->request_method(CURRENT, eip, parser->data);
+      parser->request_method(CURRENT, eip);
     free_element(eip);
   }
 
@@ -195,12 +195,12 @@ static ebb_element* eip_pop
     //printf("chunk_size: %d\n", parser->chunk_size);
     if(parser->chunk_size > REMAINING) {
       parser->eating = TRUE;
-      parser->body_handler(CURRENT, p, REMAINING, parser->data);
+      parser->body_handler(CURRENT, p, REMAINING);
       parser->chunk_size -= REMAINING;
       fhold; 
       fbreak;
     } else {
-      parser->body_handler(CURRENT, p, parser->chunk_size, parser->data);
+      parser->body_handler(CURRENT, p, parser->chunk_size);
       p += parser->chunk_size;
       parser->chunk_size = 0;
       parser->eating = FALSE;
@@ -212,14 +212,15 @@ static ebb_element* eip_pop
   action end_chunked_body {
     //printf("end chunked body\n");
     if(parser->request_complete)
-      parser->request_complete(CURRENT, parser->data);
+      parser->request_complete(CURRENT);
     fret; // goto Request; 
   }
 
   action start_req {
     if(CURRENT && CURRENT->free)
       CURRENT->free(CURRENT);
-    CURRENT = parser->new_request_info(parser->data);
+    CURRENT = parser->new_request(parser->data);
+    CURRENT->connection = parser->connection;
   }
 
   action body_logic {
@@ -234,7 +235,7 @@ static ebb_element* eip_pop
       if( CURRENT->content_length == 0) {
 
         if( parser->request_complete )
-          parser->request_complete(CURRENT, parser->data);
+          parser->request_complete(CURRENT);
 
 
       } else if( CURRENT->content_length < REMAINING ) {
@@ -247,7 +248,7 @@ static ebb_element* eip_pop
          */
         p += 1;
         if( parser->body_handler )
-          parser->body_handler(CURRENT, p, CURRENT->content_length, parser->data); 
+          parser->body_handler(CURRENT, p, CURRENT->content_length); 
 
         p += CURRENT->content_length;
         CURRENT->body_read = CURRENT->content_length;
@@ -255,7 +256,7 @@ static ebb_element* eip_pop
         assert(0 <= REMAINING);
 
         if( parser->request_complete )
-          parser->request_complete(CURRENT, parser->data);
+          parser->request_complete(CURRENT);
 
         fhold;
 
@@ -272,7 +273,7 @@ static ebb_element* eip_pop
         size_t eat = REMAINING;
 
         if( parser->body_handler && eat > 0)
-          parser->body_handler(CURRENT, p, eat, parser->data); 
+          parser->body_handler(CURRENT, p, eat); 
 
         p += eat;
         CURRENT->body_read += eat;
@@ -407,14 +408,14 @@ static ebb_element *default_new_element
   return element; 
 }
 
-static ebb_request_info* default_new_request_info
+static ebb_request* default_new_request
   ( void *data
   )
 {
-  ebb_request_info *request_info = malloc(sizeof(ebb_request_info));
-  ebb_request_info_init(request_info);
-  request_info->free = (void (*)(ebb_request_info*))free;
-  return request_info; 
+  ebb_request *request = malloc(sizeof(ebb_request));
+  ebb_request_init(request);
+  request->free = (void (*)(ebb_request*))free;
+  return request; 
 }
 
 void ebb_request_parser_init
@@ -439,7 +440,7 @@ void ebb_request_parser_init
   parser->header_field_element = NULL;
 
   parser->new_element = default_new_element;
-  parser->new_request_info = default_new_request_info;
+  parser->new_request = default_new_request;
 
   parser->request_complete = NULL;
   parser->body_handler = NULL;
@@ -468,7 +469,7 @@ size_t ebb_request_parser_execute
   COPYSTACK(stack, parser->stack);
 
   assert(parser->new_element && "undefined callback");
-  assert(parser->new_request_info && "undefined callback");
+  assert(parser->new_request && "undefined callback");
 
   p = buffer;
   pe = buffer+len;
@@ -484,7 +485,7 @@ size_t ebb_request_parser_execute
     if(eat == parser->chunk_size) {
       parser->eating = FALSE;
     }
-    parser->body_handler(CURRENT, p, eat, parser->data);
+    parser->body_handler(CURRENT, p, eat);
     p += eat;
     parser->chunk_size -= eat;
     //printf("eat: %d\n", eat);
@@ -498,13 +499,13 @@ size_t ebb_request_parser_execute
     //printf("eat normal body (before parse)\n");
     size_t eat = MIN(len, CURRENT->content_length - CURRENT->body_read);
 
-    parser->body_handler(CURRENT, p, eat, parser->data);
+    parser->body_handler(CURRENT, p, eat);
     p += eat;
     CURRENT->body_read += eat;
 
     if(CURRENT->body_read == CURRENT->content_length) {
       if(parser->request_complete)
-        parser->request_complete(CURRENT, parser->data);
+        parser->request_complete(CURRENT);
       CURRENT->eating_body = FALSE;
     }
   }
@@ -550,8 +551,8 @@ int ebb_request_parser_is_finished
   return parser->cs == ebb_request_parser_first_final;
 }
 
-void ebb_request_info_init
-  ( ebb_request_info *request
+void ebb_request_init
+  ( ebb_request *request
   )
 {
   request->expect_continue = FALSE;
@@ -561,6 +562,7 @@ void ebb_request_info_init
   request->version_major = 0;
   request->version_minor = 0;
   request->transfer_encoding = EBB_IDENTITY;
+  request->connection = NULL;
   request->free = NULL;
 }
 

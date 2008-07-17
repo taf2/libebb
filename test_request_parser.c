@@ -19,7 +19,7 @@ struct request_data {
   int num_headers;
   char* header_fields[500];
   char* header_values[500];
-  ebb_request_info request;
+  ebb_request request;
 };
 static struct request_data requests[5];
 static int num_requests;
@@ -268,7 +268,7 @@ ebb_element* new_element ()
   return el;
 }
 
-ebb_request_info* new_request_info ()
+ebb_request* new_request ()
 {
   requests[num_requests].num_headers = 0;
   requests[num_requests].request_method[0] = 0;
@@ -277,40 +277,40 @@ ebb_request_info* new_request_info ()
   requests[num_requests].fragment[0] = 0;
   requests[num_requests].query_string[0] = 0;
   requests[num_requests].body[0] = 0;
-  ebb_request_info *r = &requests[num_requests].request;
-  ebb_request_info_init(r);
+  ebb_request *r = &requests[num_requests].request;
+  ebb_request_init(r);
   r->data = &requests[num_requests];
  // printf("new request %d\n", num_requests);
   return r;
 }
 
-void request_complete(ebb_request_info *info, void *data)
+void request_complete(ebb_request *info)
 {
  // printf("request complete\n");
   num_requests++;
 }
 
-void request_method_cb(ebb_request_info *info, ebb_element *el, void *data)
+void request_method_cb(ebb_request *info, ebb_element *el)
 {
   ebb_element_strcpy(el, requests[num_requests].request_method);
 }
 
-void request_path_cb(ebb_request_info *info, ebb_element *el, void *data)
+void request_path_cb(ebb_request *info, ebb_element *el)
 {
   ebb_element_strcpy(el, requests[num_requests].request_path);
 }
 
-void request_uri_cb(ebb_request_info *info, ebb_element *el, void *data)
+void request_uri_cb(ebb_request *info, ebb_element *el)
 {
   ebb_element_strcpy(el, requests[num_requests].request_uri);
 }
 
-void fragment_cb(ebb_request_info *info, ebb_element *el, void *data)
+void fragment_cb(ebb_request *info, ebb_element *el)
 {
   ebb_element_strcpy(el, requests[num_requests].fragment);
 }
 
-void header_handler(ebb_request_info *info, ebb_element *field, ebb_element *value, void *data)
+void header_handler(ebb_request *info, ebb_element *field, ebb_element *value)
 {
   char *field_s, *value_s;
 
@@ -331,13 +331,13 @@ void header_handler(ebb_request_info *info, ebb_element *field, ebb_element *val
 }
 
 
-void query_string_cb(ebb_request_info *info, ebb_element *el, void *data)
+void query_string_cb(ebb_request *info, ebb_element *el)
 {
   ebb_element_strcpy(el, requests[num_requests].query_string);
 }
 
 
-void body_handler(ebb_request_info *info, const char *p, size_t len, void *data)
+void body_handler(ebb_request *info, const char *p, size_t len)
 {
   strncat(requests[num_requests].body, p, len);
  // printf("body_handler: '%s'\n", requests[num_requests].body);
@@ -350,7 +350,7 @@ void parser_init()
   ebb_request_parser_init(&parser);
 
   parser.new_element = new_element;
-  parser.new_request_info = new_request_info;
+  parser.new_request = new_request;
   parser.request_complete = request_complete;
   parser.header_handler = header_handler;
   parser.request_method = request_method_cb;

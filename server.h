@@ -17,6 +17,7 @@ typedef struct ebb_connection ebb_connection;
 struct ebb_buf {
   char *base;
   size_t len;
+  void (*free)(ebb_buf*);
 };
 
 struct ebb_server {
@@ -63,18 +64,18 @@ struct ebb_connection {
   ev_io read_watcher;          /* private */
   ev_io write_watcher;         /* private */
   ev_timer timeout_watcher;    /* private */
-  ebb_request_parser *parser;  /* private */
   
   /* Public */
+  ebb_request_parser parser;  /* don't forget to set the callbacks here */
   ebb_buf* (*new_buf) (ebb_connection*); 
   int (*on_writable) (ebb_connection*); /* Returns EBB_STOP or EBB_AGAIN */
   int (*on_timeout) (ebb_connection*); /* Returns EBB_STOP or EBB_AGAIN */
+  void (*free) (ebb_connection*);
   void *data;
 };
 
 void ebb_connection_init
   ( ebb_connection *connection
-  , ebb_request_parser *parser
   , float timeout
   );
 

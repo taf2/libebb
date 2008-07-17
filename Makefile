@@ -6,6 +6,7 @@ GCC_OPTS  = -fPIC -g -Wall
 
 objects: server.o request_parser.o 
 
+
 server.o: server.c server.h
 	gcc -fPIC -I${LIBEV}/include -c $< -o $@ -g -Wall
 
@@ -22,7 +23,10 @@ test_server: test_server.c server.o request_parser.o
 	gcc ${GCC_OPTS} -L${LIBEV}/lib -lev -I${LIBEV}/include $< server.o request_parser.o -o $@
 
 
-.PHONY: clean test clobber
+.PHONY: doc clean test clobber
+
+doc: 
+	doxygen 
 
 test: test_request_parser
 	./test_request_parser
