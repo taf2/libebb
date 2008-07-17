@@ -36,7 +36,7 @@ static void on_timeout
   , int revents
   )
 {
-  ebb_connection *connection = (ebb_connection*)(watcher->data);
+  ebb_connection *connection = watcher->data;
 
   /* if on_timeout returns true, we don't time out */
   if(connection->on_timeout && connection->on_timeout(connection)) {
@@ -56,7 +56,7 @@ static void on_writable
   , int revents
   )
 {
-  ebb_connection *connection = (ebb_connection*)(watcher->data);
+  ebb_connection *connection = watcher->data;
 
   if(connection->on_writable) {
     int r = connection->on_writable(connection);
@@ -80,7 +80,7 @@ static void on_readable
   , int revents
   )
 {
-  ebb_connection *connection = (ebb_connection*)(watcher->data);
+  ebb_connection *connection = watcher->data;
 
   ebb_buf *buf = NULL;
   if(connection->new_buf)
@@ -124,7 +124,7 @@ static void on_connection
   , int revents
   )
 {
-  ebb_server *server = (ebb_server*)(watcher->data);
+  ebb_server *server = watcher->data;
 
   assert(server->listening);
   assert(server->loop == loop);
