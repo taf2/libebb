@@ -17,10 +17,10 @@ request_parser.c: request_parser.rl
 	ragel -s -G2 $< -o $@
 
 test_request_parser: test_request_parser.c request_parser.o
-	gcc ${GCC_OPTS}  $< request_parser.o -o $@
+	gcc ${GCC_OPTS} -lefence  $^ -o $@
 
 test_server: test_server.c server.o request_parser.o
-	gcc ${GCC_OPTS} -lefence -L${LIBEV}/lib -lev -I${LIBEV}/include $< server.o request_parser.o -o $@
+	gcc ${GCC_OPTS} -lefence -L${LIBEV}/lib -lev -I${LIBEV}/include $^ -o $@
 
 
 .PHONY: doc clean test clobber
@@ -32,9 +32,9 @@ test: test_request_parser
 	./test_request_parser
 
 clean:
-	-rm -f *.o
-	-rm -f test_request_parser test_server
-	-rm -f libebb.so.0.0.1
+	@-rm -f *.o
+	@-rm -f test_request_parser test_server
+	@-rm -f libebb.so.0.0.1
 	
 clobber: clean
-	-rm -f request_parser.c
+	@-rm -f request_parser.c

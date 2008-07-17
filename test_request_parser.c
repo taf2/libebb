@@ -7,18 +7,21 @@
 #define TRUE 1
 #define FALSE 0
 
+#define MAX_HEADERS 500
+#define MAX_ELEMENT_SIZE 500
+
 static ebb_request_parser parser;
 struct request_data {
   const char *raw;
-  char request_method[500];
-  char request_path[500];
-  char request_uri[500];
-  char fragment[500];
-  char query_string[500];
-  char body[500];
+  char request_method[MAX_ELEMENT_SIZE];
+  char request_path[MAX_ELEMENT_SIZE];
+  char request_uri[MAX_ELEMENT_SIZE];
+  char fragment[MAX_ELEMENT_SIZE];
+  char query_string[MAX_ELEMENT_SIZE];
+  char body[MAX_ELEMENT_SIZE];
   int num_headers;
-  char* header_fields[500];
-  char* header_values[500];
+  char header_fields[MAX_HEADERS][MAX_ELEMENT_SIZE];
+  char header_values[MAX_HEADERS][MAX_ELEMENT_SIZE];
   ebb_request request;
 };
 static struct request_data requests[5];
@@ -261,13 +264,6 @@ int request_eq
   return request_data_eq(&requests[index], expected);
 }
 
-ebb_element* new_element ()
-{
-  ebb_element *el = malloc(sizeof(ebb_element));
-  ebb_element_init(el);
-  return el;
-}
-
 ebb_request* new_request ()
 {
   requests[num_requests].num_headers = 0;
@@ -312,18 +308,10 @@ void fragment_cb(ebb_request *info, ebb_element *el)
 
 void header_handler(ebb_request *info, ebb_element *field, ebb_element *value)
 {
-  char *field_s, *value_s;
-
-  field_s = malloc( ebb_element_len(field)+1 );
-  ebb_element_strcpy( field, field_s);
-
-  value_s = malloc( ebb_element_len(value)+1 );
-  ebb_element_strcpy( value, value_s);
-
   int nh = requests[num_requests].num_headers;
 
-  requests[num_requests].header_fields[nh] = field_s;
-  requests[num_requests].header_values[nh] = value_s;
+  ebb_element_strcpy( field, requests[num_requests].header_fields[nh] );
+  ebb_element_strcpy( value, requests[num_requests].header_values[nh] );
 
   requests[num_requests].num_headers += 1;
 
@@ -349,7 +337,6 @@ void parser_init()
 
   ebb_request_parser_init(&parser);
 
-  parser.new_element = new_element;
   parser.new_request = new_request;
   parser.request_complete = request_complete;
   parser.header_handler = header_handler;
