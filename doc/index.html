@@ -1,0 +1,63 @@
+
+<html>
+  <style>
+    body {
+      background: #fff;
+      color: #444;
+      font-size: 14pt;
+      font-family: Palatino;
+      margin: 3em 0 3em 3em; 
+    }
+
+    ul {
+      padding-left: 0;
+    }
+
+    li {
+      margin-top: 0.5em;
+      margin-bottom: 0.5em;
+      max-width: 30em;
+    }
+
+    p {
+      max-width: 30em; 
+    }
+  </style>
+  <body>
+    <h1>libebb</h1>
+
+    <p>
+    libebb is a lightweight HTTP server library for C.  It abstracts the
+    socket handling and request parsing. It handles persistant connections,
+    pipelined requests, chunked uploads, or any other HTTP/1.1 complient
+    junk you might throw at it.  
+    </p>
+    <ul>
+    <li>there are no allocations made</li>
+    <li>the <a
+      href="http://software.schmorp.de/pkg/libev.html">libev</a> event loop
+    is used.
+    </li>
+    <li>it is single threaded
+    </li>
+    <li>the parser is nearly optimally fast.
+      it is a state machine written in <a
+      href="http://research.cs.queensu.ca/~thurston/ragel/">Ragel</a>
+    </li>
+    </ul>
+    <p>
+    libebb does not support SSL, but may in the future.
+    </p>
+    <p>
+    libebb is intended to be used as the central engine in
+    all types of web servers: load balancers (like perlbal), embeded
+    servers (like Mongrel), or even full service servers like Nginx.
+    </p>
+
+    <h2>Usage</h2>
+
+    <p>Functionality is provided by implmenting many callbacks.
+
+    </p>
+  </body>
+</html>

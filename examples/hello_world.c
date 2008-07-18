@@ -4,13 +4,13 @@
 #include <unistd.h>
 
 #include <ev.h>
-#include "server.h"
+#include <server.h>
 
 static int c = 0;
 
 static void request_complete(ebb_request *request)
 {
-  ebb_connection_start_write_watcher(request->connection);
+  ebb_connection_enable_on_writable(request->connection);
   printf("request done!\n");
 }
 
