@@ -30,7 +30,11 @@ struct ebb_server {
   unsigned listening:1;        /* ro */
 
   /* Public */
+
+  /* Allocates and initializes an ebb_connection.  NULL by default.
+   */
   ebb_connection* (*new_connection) (ebb_server*, struct sockaddr_in*);
+
   void *data;
 };
 
@@ -66,11 +70,45 @@ struct ebb_connection {
   ev_timer timeout_watcher;    /* private */
   
   /* Public */
-  ebb_request_parser parser;  /* don't forget to set the callbacks here */
+
+  /* There are many callbacks available from the request parser see
+   * request_parser.h for all of the possibilities.
+   * 
+   * A useful one, for example, is the request_uri callback which sends the
+   * request_uri when it is received. That would be set by
+   * connection->parser.request_uri = my_request_uri_callback;
+   */
+  ebb_request_parser parser;  
+
+  /* The new_buf callback allocates and initializes an ebb_buf structure.
+   * By default this is set to a simple malloc() based callback which always
+   * returns 4 kilobyte bufs.  Write over it with your own to use your own
+   * custom allocation
+   *
+   * new_buf is called each time there is data from a client connection to
+   * be read. See on_readable() in server.c to see exactly how this is used.
+   */
   ebb_buf* (*new_buf) (ebb_connection*); 
-  int (*on_writable) (ebb_connection*); /* Returns EBB_STOP or EBB_AGAIN */
-  int (*on_timeout) (ebb_connection*); /* Returns EBB_STOP or EBB_AGAIN */
+
+  /* Called when the connection is available for writing.
+   * Note that by default the write watcher is not attached to the event
+   * loop. You must call ebb_connection_enable_on_writable() if you want
+   * this callback to work. 
+   * NULL by default.
+   * Returns EBB_STOP or EBB_AGAIN.
+   */
+  int (*on_writable) (ebb_connection*); 
+
+  /* Returns EBB_STOP or EBB_AGAIN 
+   * NULL by default.
+   */
+  int (*on_timeout) (ebb_connection*); 
+
+  /* Called when libebb will no longer use this structure. 
+   * NULL by default.
+   */
   void (*free) (ebb_connection*); 
+
   void *data;
 };
 
@@ -83,7 +121,7 @@ void ebb_connection_close
   ( ebb_connection *
   );
 
-void ebb_connection_start_write_watcher 
+void ebb_connection_enable_on_writable 
   ( ebb_connection *
   );
 

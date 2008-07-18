@@ -42,7 +42,10 @@ static void on_timeout
   ebb_connection *connection = watcher->data;
 
   /* if on_timeout returns true, we don't time out */
-  if(connection->on_timeout && connection->on_timeout(connection)) {
+  if( connection->on_timeout 
+   && connection->on_timeout(connection) != EBB_AGAIN
+    ) 
+  {
     ev_timer_again(loop, watcher);
     return;
   }
@@ -182,25 +185,24 @@ static void on_connection
 }
 
 /**
- * begin the server listening on a file descriptor
- * Thie DOES NOT start the event loop. That is your job.
- * Start the event loop after the server is listening.
+ * Begin the server listening on a file descriptor.  This DOES NOT start the
+ * event loop.  Start the event loop after making this call.
  */
 int ebb_server_listen_on_fd
   ( ebb_server *server
-  , const int sfd 
+  , const int fd 
   )
 {
   assert(server->listening == FALSE);
 
-  if (listen(sfd, EBB_MAX_CONNECTIONS) < 0) {
+  if (listen(fd, EBB_MAX_CONNECTIONS) < 0) {
     perror("listen()");
     return -1;
   }
   
-  set_nonblock(sfd); /* XXX superfluous? */
+  set_nonblock(fd); /* XXX superfluous? */
   
-  server->fd = sfd;
+  server->fd = fd;
   server->listening = TRUE;
   
   ev_io_set (&server->connection_watcher, server->fd, EV_READ | EV_ERROR);
@@ -211,39 +213,36 @@ int ebb_server_listen_on_fd
 
 
 /**
- * begin the server listening on a localhost TCP port
- * Thie DOES NOT start the event loop. That is your job.
- * Start the event loop after the server is listening.
+ * Begin the server listening on a file descriptor This DOES NOT start the
+ * event loop. Start the event loop after making this call.
  */
 int ebb_server_listen_on_port
   ( ebb_server *server
   , const int port
   )
 {
-  int sfd = -1;
+  int fd = -1;
   struct linger ling = {0, 0};
   struct sockaddr_in addr;
   int flags = 1;
   
-  if ((sfd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+  if ((fd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
     perror("socket()");
     goto error;
   }
   
   flags = 1;
-  setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, (void *)&flags, sizeof(flags));
-  setsockopt(sfd, SOL_SOCKET, SO_KEEPALIVE, (void *)&flags, sizeof(flags));
-  setsockopt(sfd, SOL_SOCKET, SO_LINGER, (void *)&ling, sizeof(ling));
+  setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (void *)&flags, sizeof(flags));
+  setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, (void *)&flags, sizeof(flags));
+  setsockopt(fd, SOL_SOCKET, SO_LINGER, (void *)&ling, sizeof(ling));
 
-  /* TODO: Sending single byte messages in a response?
-   * Perhaps need to enable the Nagel algorithm dynamically
-   * For now disabling.
+  /* TODO: Sending single byte messages in a response?  Perhaps need to
+   * enable the Nagel algorithm dynamically For now disabling.
    */
-  setsockopt(sfd, IPPROTO_TCP, TCP_NODELAY, (void *)&flags, sizeof(flags));
+  setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (void *)&flags, sizeof(flags));
   
-  /*
-   * the memset call clears nonstandard fields in some impementations
-   * that otherwise mess things up.
+  /* the memset call clears nonstandard fields in some impementations that
+   * otherwise mess things up.
    */
   memset(&addr, 0, sizeof(addr));
   
@@ -251,24 +250,24 @@ int ebb_server_listen_on_port
   addr.sin_port = htons(port);
   addr.sin_addr.s_addr = htonl(INADDR_ANY);
   
-  if (bind(sfd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+  if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
     perror("bind()");
     goto error;
   }
   
-  int ret = ebb_server_listen_on_fd(server, sfd);
+  int ret = ebb_server_listen_on_fd(server, fd);
   if (ret >= 0) {
     sprintf(server->port, "%d", port);
   }
   return ret;
 error:
-  if(sfd > 0) close(sfd);
+  if(fd > 0) close(fd);
   return -1;
 }
 
 /**
- * Stops a server from listening. Will not accept new connections.
- * TODO: Drops all connections?
+ * Stops the server. Will not accept new connections.  Does not drop
+ * existing connections.
  */
 void ebb_server_unlisten
   ( ebb_server *server
@@ -283,9 +282,10 @@ void ebb_server_unlisten
 }
 
 /**
- * Initialize an ebb_server structure.
- * After calling ebb_server_init set the callback server->new_connection 
- * and, optionally, callback data server->data 
+ * Initialize an ebb_server structure.  After calling ebb_server_init set
+ * the callback server->new_connection and, optionally, callback data
+ * server->data.  The new connection MUST be initialized with
+ * ebb_connection_init before returning it to the server.
  *
  * @param server the server to initialize
  * @param loop a libev loop
@@ -326,15 +326,13 @@ static ebb_buf* default_new_buf
 }
 
 /**
- * Initialize an ebb_connection structure.
- * After calling ebb_connection_init set the callback 
- * connection->new_request 
- * and, optionally, callback data connection->data 
+ * Initialize an ebb_connection structure. After calling this function you
+ * must setup callbacks for the different actions the server can take. See
+ * server.h for which callbacks are availible. 
  * 
- * This should be called immediately after allocating space for
- * a new ebb_connection structure. Most likely, this will only 
- * be called within the ebb_server->new_connection callback which
- * you supply. 
+ * This should be called immediately after allocating space for a new
+ * ebb_connection structure. Most likely, this will only be called within
+ * the ebb_server->new_connection callback which you supply. 
  *
  * @param connection the connection to initialize
  * @param timeout    the timeout in seconds
@@ -382,7 +380,11 @@ void ebb_connection_close
   }
 }
 
-void ebb_connection_start_write_watcher 
+/** Enables connection->on_writable callback
+ * It will be called when the socket is okay to write to.  Stop the callback
+ * by returning EBB_STOP from connection->on_writable.
+ */
+void ebb_connection_enable_on_writable 
   ( ebb_connection *connection
   )
 {

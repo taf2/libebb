@@ -25,6 +25,9 @@ test_server: test_server.c server.o request_parser.o
 
 .PHONY: doc clean test clobber
 
+wc:
+	wc -l request_parser.rl request_parser.h server.c server.h test_*.c
+
 doc: 
 	doxygen 
 
