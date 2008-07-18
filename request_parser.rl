@@ -13,131 +13,78 @@
 #define CURRENT (parser->current_request)
 #define CONTENT_LENGTH (parser->current_request->content_length)
 
-#define eip_empty(parser) (parser->eip_stack[0] == NULL)
-
-static void eip_push
-  ( ebb_request_parser *parser
-  , ebb_element *element
-  )
-{
-  int i = 0;
-  /* NO BOUNDS CHECKING - LIVING ON THE EDGE! */
-  for(i = 0; parser->eip_stack[i] != NULL; i++) {;}
-  //printf("push! (stack size before: %d)\n", i);
-  parser->eip_stack[i] = element;
-}
-
-static ebb_element* eip_pop
-  ( ebb_request_parser *parser
-  )
-{
-  int i;
-  ebb_element *top = NULL;
-  assert( ! eip_empty(parser) ); 
-  /* NO BOUNDS CHECKING - LIVING ON THE EDGE! */
-  for(i = 0; parser->eip_stack[i] != NULL; i++) {;}
-  //printf("pop! (stack size before: %d)\n", i);
-  top = parser->eip_stack[i-1];
-  parser->eip_stack[i-1] = NULL;
-  return top;
-}
-
+#define LEN(FROM) (p - parser->FROM##_mark)
+#define CALLBACK(FOR)                         \
+  if(parser->FOR##_mark && parser->FOR) {     \
+    parser->FOR( CURRENT                      \
+               , parser->FOR##_mark           \
+               , p - parser->FOR##_mark       \
+               );                             \
+ }
+#define HEADER_CALLBACK(FOR)                  \
+  if(parser->FOR##_mark && parser->FOR) {     \
+    parser->FOR( CURRENT                      \
+               , parser->FOR##_mark           \
+               , p - parser->FOR##_mark       \
+               , CURRENT->number_of_headers   \
+               );                             \
+ }
 
 %%{
   machine ebb_request_parser;
 
-  action mark {
-    //printf("mark!\n");
-    eip = parser->new_element(parser->data);
-    eip->base = p;
-    eip_push(parser, eip);
-  }
-
-  # TODO REMOVE!!! arg! should i use the -d option in ragel?
-  action mmark {
-    //printf("mmark!\n");
-    eip = parser->new_element(parser->data);
-    eip->base = p;
-    eip_push(parser, eip);
-  }
+  action mark_header_field   { parser->header_field_mark   = p; }
+  action mark_header_value   { parser->header_value_mark   = p; }
+  action mark_fragment       { parser->fragment_mark       = p; }
+  action mark_query_string   { parser->query_string_mark   = p; }
+  action mark_request_method { parser->request_method_mark = p; }
+  action mark_request_path   { parser->request_path_mark   = p; }
+  action mark_request_uri    { parser->request_uri_mark    = p; }
 
   action write_field { 
     //printf("write_field!\n");
-    assert(parser->header_field_element == NULL);  
-    eip = eip_pop(parser);
-    last = ebb_element_last(eip);
-    last->len = p - last->base;
-    parser->header_field_element = eip;
-    assert(eip_empty(parser) && "eip_stack must be empty after header field");
+    HEADER_CALLBACK(header_field);
+    parser->header_field_mark = NULL;
   }
 
   action write_value {
     //printf("write_value!\n");
-    assert(parser->header_field_element != NULL);  
+    HEADER_CALLBACK(header_value);
+    parser->header_value_mark = NULL;
+  }
 
-    eip = eip_pop(parser);
-    last = ebb_element_last(eip);
-    last->len = p - last->base;  
-
-    if(parser->header_handler)
-      parser->header_handler( CURRENT
-                            , parser->header_field_element
-                            , eip
-                            
-                            );
-    free_element(parser->header_field_element);
-    free_element(eip);
-    eip = parser->header_field_element = NULL;
+  action end_header {
+    CURRENT->number_of_headers++;
   }
 
   action request_uri { 
     //printf("request uri\n");
-    eip = eip_pop(parser);
-    last = ebb_element_last(eip);
-    last->len = p - last->base;  
-    if(parser->request_uri)
-      parser->request_uri(CURRENT, eip);
-    free_element(eip);
+    CALLBACK(request_uri);
+    parser->request_uri_mark = NULL;
   }
 
   action fragment { 
     //printf("fragment\n");
-    eip = eip_pop(parser);
-    last = ebb_element_last(eip);
-    last->len = p - last->base;  
-    if(parser->fragment)
-      parser->fragment(CURRENT, eip);
-    free_element(eip);
+    CALLBACK(fragment);
+    parser->fragment_mark = NULL;
   }
 
   action query_string { 
     //printf("query  string\n");
-    eip = eip_pop(parser);
-    last = ebb_element_last(eip);
-    last->len = p - last->base;  
-    if(parser->query_string)
-      parser->query_string(CURRENT, eip);
-    free_element(eip);
+    CALLBACK(query_string);
+    parser->query_string_mark = NULL;
   }
 
   action request_path {
     //printf("request path\n");
-    eip = eip_pop(parser);
-    last = ebb_element_last(eip);
-    last->len = p - last->base;  
-    if(parser->request_path)
-      parser->request_path(CURRENT, eip);
-    free_element(eip);
+    CALLBACK(request_path);
+    parser->request_path_mark = NULL;
   }
 
   action request_method { 
     //printf("request method\n");
-    eip = eip_pop(parser);
-    last = ebb_element_last(eip);
-    last->len = p - last->base;
-    if(parser->request_method)
-      parser->request_method(CURRENT, eip);
-    free_element(eip);
+    CALLBACK(request_method);
+    parser->request_method_mark = NULL;
   }
 
   action content_length {
@@ -321,14 +268,14 @@ static ebb_element* eip_pop
   scheme = ( alpha | digit | "+" | "-" | "." )* ;
   absolute_uri = (scheme ":" (uchar | reserved )*);
   path = ( pchar+ ( "/" pchar* )* ) ;
-  query = ( uchar | reserved )* >mark %query_string ;
+  query = ( uchar | reserved )* >mark_query_string %query_string ;
   param = ( pchar | "/" )* ;
   params = ( param ( ";" param )* ) ;
   rel_path = ( path? (";" params)? ) ;
-  absolute_path = ( "/"+ rel_path ) >mmark %request_path ("?" query)?;
-  Request_URI = ( "*" | absolute_uri | absolute_path ) >mark %request_uri;
-  Fragment = ( uchar | reserved )* >mark %fragment;
-  Method = ( upper | digit | safe ){1,20} >mark %request_method;
+  absolute_path = ( "/"+ rel_path ) >mark_request_path %request_path ("?" query)?;
+  Request_URI = ( "*" | absolute_uri | absolute_path ) >mark_request_uri %request_uri;
+  Fragment = ( uchar | reserved )* >mark_fragment %fragment;
+  Method = ( upper | digit | safe ){1,20} >mark_request_method %request_method;
   http_number = (digit+ $version_major "." digit+ $version_minor);
   HTTP_Version = ( "HTTP/" http_number );
 
@@ -339,18 +286,18 @@ static ebb_element* eip_pop
   message_header = field_name head_sep field_value :> CRLF;
 
   cl = "Content-Length"i %write_field  head_sep
-       digit+ >mark $content_length %write_value;
+       digit+ >mark_header_value $content_length %write_value;
 
   te = "Transfer-Encoding"i %write_field %use_chunked_encoding head_sep
-       "identity"i >mark %use_identity_encoding %write_value;
+       "identity"i >mark_header_value %use_identity_encoding %write_value;
 
   expect = "Expect"i %write_field head_sep
-       "100-continue"i >mark %expect_continue %write_value;
+       "100-continue"i >mark_header_value %expect_continue %write_value;
 
   t =  "Trailer"i %write_field head_sep
-        field_value >mark %trailer %write_value;
+        field_value >mark_header_value %trailer %write_value;
 
-  rest = (field_name %write_field head_sep field_value >mark %write_value);
+  rest = (field_name %write_field head_sep field_value >mark_header_value %write_value);
 
   header  = cl     @(headers,4)
           | te     @(headers,4)
@@ -359,8 +306,9 @@ static ebb_element* eip_pop
           | rest   @(headers,1)
           ;
 
+  HeaderLine = header >mark_header_field :> CRLF %end_header;
   Request_Line = ( Method " " Request_URI ("#" Fragment)? " " HTTP_Version CRLF ) ;
-  RequestHeader = Request_Line (header >mark :> CRLF)* :> CRLF;
+  RequestHeader = Request_Line HeaderLine* :> CRLF;
 
 # chunked message
   trailing_headers = message_header*;
@@ -384,29 +332,6 @@ static ebb_element* eip_pop
 %% write data;
 
 #define COPYSTACK(dest, src)  for(i = 0; i < EBB_RAGEL_STACK_SIZE; i++) { dest[i] = src[i]; }
-
-/* calls the element's free for each item in the list */
-static void free_element
-  ( ebb_element *element
-  )
-{
-  if(element) {
-    free_element(element->next);
-    element->next = NULL;
-    if(element->free) 
-      element->free(element);
-  }
-}
-
-static ebb_element *default_new_element
-  ( void *data
-  )
-{
-  ebb_element *element = malloc(sizeof(ebb_element));
-  ebb_element_init(element);
-  element->free = (void (*)(ebb_element*))free;
-  return element; 
-}
 
 static ebb_request* default_new_request
   ( void *data
@@ -435,16 +360,19 @@ void ebb_request_parser_init
   parser->chunk_size = 0;
   parser->eating = 0;
   
-  parser->eip_stack[0] = NULL;
   parser->current_request = NULL;
-  parser->header_field_element = NULL;
 
-  parser->new_element = default_new_element;
+  parser->header_field_mark = parser->header_value_mark   = 
+  parser->query_string_mark = parser->request_path_mark   = 
+  parser->request_uri_mark  = parser->request_method_mark = 
+  parser->fragment_mark     = NULL;
+
   parser->new_request = default_new_request;
 
   parser->request_complete = NULL;
   parser->body_handler = NULL;
-  parser->header_handler = NULL;
+  parser->header_field = NULL;
+  parser->header_value = NULL;
   parser->request_method = NULL;
   parser->request_uri = NULL;
   parser->fragment = NULL;
@@ -460,7 +388,6 @@ size_t ebb_request_parser_execute
   , size_t len
   )
 {
-  ebb_element *eip, *last; 
   const char *p, *pe;
   int i, cs = parser->cs;
 
@@ -468,7 +395,6 @@ size_t ebb_request_parser_execute
   int stack[EBB_RAGEL_STACK_SIZE];
   COPYSTACK(stack, parser->stack);
 
-  assert(parser->new_element && "undefined callback");
   assert(parser->new_request && "undefined callback");
 
   p = buffer;
@@ -489,8 +415,7 @@ size_t ebb_request_parser_execute
     p += eat;
     parser->chunk_size -= eat;
     //printf("eat: %d\n", eat);
-  } else if( parser->current_request && 
-             CURRENT->eating_body ) {
+  } else if( parser->current_request && CURRENT->eating_body ) {
     /*
      *
      * eat normal body
@@ -510,14 +435,13 @@ size_t ebb_request_parser_execute
     }
   }
 
-
-
-  /* each on the eip stack gets expanded */
-  for(i = 0; parser->eip_stack[i] != NULL; i++) {
-    last = ebb_element_last(parser->eip_stack[i]);
-    last->next = parser->new_element(parser->data);
-    last->next->base = buffer;
-  }
+  if(parser->header_field_mark)   parser->header_field_mark   = buffer;
+  if(parser->header_value_mark)   parser->header_value_mark   = buffer;
+  if(parser->fragment_mark)       parser->fragment_mark       = buffer;
+  if(parser->query_string_mark)   parser->query_string_mark   = buffer;
+  if(parser->request_method_mark) parser->request_method_mark = buffer;
+  if(parser->request_path_mark)   parser->request_path_mark   = buffer;
+  if(parser->request_uri_mark)    parser->request_uri_mark    = buffer;
 
   %% write exec;
 
@@ -525,12 +449,13 @@ size_t ebb_request_parser_execute
   parser->top = top;
   COPYSTACK(parser->stack, stack);
 
-
-  /* each on the eip stack gets len */
-  for(i = 0; parser->eip_stack[i] != NULL; i++) {
-    last = ebb_element_last(parser->eip_stack[i]);
-    last->len = pe - last->base;
-  }
+  HEADER_CALLBACK(header_field);
+  HEADER_CALLBACK(header_value);
+  CALLBACK(fragment);
+  CALLBACK(query_string);
+  CALLBACK(request_method);
+  CALLBACK(request_path);
+  CALLBACK(request_uri);
 
   assert(p <= pe && "buffer overflow after parsing execute");
 
@@ -561,61 +486,9 @@ void ebb_request_init
   request->content_length = 0;
   request->version_major = 0;
   request->version_minor = 0;
+  request->number_of_headers = 0;
   request->transfer_encoding = EBB_IDENTITY;
   request->connection = NULL;
   request->free = NULL;
-}
-
-void ebb_element_init
-  ( ebb_element *element
-  ) 
-{
-  element->base = NULL;
-  element->len  = -1;
-  element->next = NULL;
-  element->free = NULL;
-}
-
-ebb_element* ebb_element_last
-  ( ebb_element *element
-  )
-{
-  /* TODO: currently a linked list but could be 
-   * done with a circular ll for * O(1) access
-   * probably not a big deal as it is since these 
-   * never get very long 
-   */
-  for( ; element->next; element = element->next) {;}
-  return element;
-}
-
-size_t ebb_element_len
-  ( ebb_element *element
-  )
-{
-  size_t len; 
-  for(len = 0; element; element = element->next)
-    len += element->len;
-  return len;
-}
-
-void ebb_element_strcpy
-  ( ebb_element *element
-  , char *dest
-  )
-{
-  dest[0] = '\0';
-  for( ; element; element = element->next) 
-    strncat(dest, element->base, element->len);
-}
-
-void ebb_element_printf
-  ( ebb_element *element
-  , const char *format
-  )
-{
-  char str[1000];
-  ebb_element_strcpy(element, str);
-  printf(format, str);
 }
 

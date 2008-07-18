@@ -273,6 +273,12 @@ ebb_request* new_request ()
   requests[num_requests].fragment[0] = 0;
   requests[num_requests].query_string[0] = 0;
   requests[num_requests].body[0] = 0;
+  int i; 
+  for(i = 0; i < MAX_HEADERS; i++) {
+    requests[num_requests].header_fields[i][0] = 0;
+    requests[num_requests].header_values[i][0] = 0;
+  }
+    
   ebb_request *r = &requests[num_requests].request;
   ebb_request_init(r);
   r->data = &requests[num_requests];
@@ -286,46 +292,43 @@ void request_complete(ebb_request *info)
   num_requests++;
 }
 
-void request_method_cb(ebb_request *info, ebb_element *el)
+void request_method_cb(ebb_request *request, const char *p, size_t len)
 {
-  ebb_element_strcpy(el, requests[num_requests].request_method);
+  strncat(requests[num_requests].request_method, p, len);
 }
 
-void request_path_cb(ebb_request *info, ebb_element *el)
+void request_path_cb(ebb_request *request, const char *p, size_t len)
 {
-  ebb_element_strcpy(el, requests[num_requests].request_path);
+  strncat(requests[num_requests].request_path, p, len);
 }
 
-void request_uri_cb(ebb_request *info, ebb_element *el)
+void request_uri_cb(ebb_request *request, const char *p, size_t len)
 {
-  ebb_element_strcpy(el, requests[num_requests].request_uri);
+  strncat(requests[num_requests].request_uri, p, len);
 }
 
-void fragment_cb(ebb_request *info, ebb_element *el)
+void query_string_cb(ebb_request *request, const char *p, size_t len)
 {
-  ebb_element_strcpy(el, requests[num_requests].fragment);
+  strncat(requests[num_requests].query_string, p, len);
 }
 
-void header_handler(ebb_request *info, ebb_element *field, ebb_element *value)
+void fragment_cb(ebb_request *request, const char *p, size_t len)
 {
-  int nh = requests[num_requests].num_headers;
-
-  ebb_element_strcpy( field, requests[num_requests].header_fields[nh] );
-  ebb_element_strcpy( value, requests[num_requests].header_values[nh] );
-
-  requests[num_requests].num_headers += 1;
-
-  //printf("header '%s': '%s'\n", field_s, value_s);
+  strncat(requests[num_requests].fragment, p, len);
 }
 
-
-void query_string_cb(ebb_request *info, ebb_element *el)
+void header_field_cb(ebb_request *request, const char *p, size_t len, int header_index)
 {
-  ebb_element_strcpy(el, requests[num_requests].query_string);
+  strncat(requests[num_requests].header_fields[header_index], p, len);
 }
 
+void header_value_cb(ebb_request *request, const char *p, size_t len, int header_index)
+{
+  strncat(requests[num_requests].header_values[header_index], p, len);
+  requests[num_requests].num_headers = header_index + 1;
+}
 
-void body_handler(ebb_request *info, const char *p, size_t len)
+void body_handler(ebb_request *request, const char *p, size_t len)
 {
   strncat(requests[num_requests].body, p, len);
  // printf("body_handler: '%s'\n", requests[num_requests].body);
@@ -339,7 +342,8 @@ void parser_init()
 
   parser.new_request = new_request;
   parser.request_complete = request_complete;
-  parser.header_handler = header_handler;
+  parser.header_field = header_field_cb;
+  parser.header_value = header_value_cb;
   parser.request_method = request_method_cb;
   parser.request_path = request_path_cb;
   parser.request_uri = request_uri_cb;
@@ -407,9 +411,20 @@ int test_multiple3
   if(num_requests != 3)
     return FALSE;
 
-  return request_eq(0, r1) &&
-         request_eq(1, r2) &&
-         request_eq(2, r3);
+  if(!request_eq(0, r1)){
+    printf("request 1 error.\n");
+    return FALSE;
+  }
+  if(!request_eq(1, r2)){
+    printf("request 2 error.\n");
+    return FALSE;
+  }
+  if(!request_eq(2, r3)){
+    printf("request 3 error.\n");
+    return FALSE;
+  }
+
+  return TRUE;
 }
 
 /**
@@ -438,7 +453,6 @@ int test_scan2
   for(i = 1; i < total_len - 1; i ++ ) {
 
     parser_init();
-
 
     int buf1_len = i;
     strncpy(buf1, total, buf1_len);
@@ -509,6 +523,7 @@ int test_scan3
     for(i = 1; i < j; i ++ ) {
 
       parser_init();
+
 
 
 
@@ -612,10 +627,11 @@ int main()
   assert(1 == requests[0].request.version_major); 
   assert(1 == requests[0].request.version_minor);
 
-
-
   // three requests - no bodies
-  assert( test_multiple3(&get_no_headers_no_body, &get_one_header_no_body, &get_no_headers_no_body));
+  assert( test_multiple3( &get_no_headers_no_body
+                        , &get_one_header_no_body
+                        , &get_no_headers_no_body
+                        ));
 
   // three requests - one body
   assert( test_multiple3(&get_no_headers_no_body, &get_funky_content_length_body_hello, &get_no_headers_no_body));

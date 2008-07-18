@@ -20,6 +20,9 @@
 #define TRUE 1
 #define FALSE 0
 
+#define FREE_CONNECTION_IF_CLOSED \
+  if(!connection->open && connection->free) connection->free(connection);
+
 static void set_nonblock (int fd)
 {
   int flags = fcntl(fd, F_GETFL, 0);
@@ -45,6 +48,7 @@ static void on_timeout
   }
 
   ebb_connection_close(connection);
+  FREE_CONNECTION_IF_CLOSED 
 }
 
 /* Internal callback 
@@ -68,6 +72,7 @@ static void on_writable
   } else {
     ev_io_stop(loop, watcher);
   }
+  FREE_CONNECTION_IF_CLOSED 
 }
 
 
@@ -109,9 +114,11 @@ static void on_readable
   if(buf->free)
     buf->free(buf);
 
+  FREE_CONNECTION_IF_CLOSED 
   return;
 error:
   ebb_connection_close(connection);
+  FREE_CONNECTION_IF_CLOSED 
 }
 
 
@@ -358,6 +365,7 @@ void ebb_connection_init
   connection->new_buf = default_new_buf;
   connection->on_timeout = NULL;
   connection->on_writable = NULL;
+  connection->free = NULL;
   connection->data = NULL;
 }
 

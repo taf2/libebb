@@ -70,6 +70,7 @@ struct ebb_connection {
   ebb_buf* (*new_buf) (ebb_connection*); 
   int (*on_writable) (ebb_connection*); /* Returns EBB_STOP or EBB_AGAIN */
   int (*on_timeout) (ebb_connection*); /* Returns EBB_STOP or EBB_AGAIN */
+  void (*free) (ebb_connection*); 
   void *data;
 };
 

@@ -4,9 +4,9 @@
 #include <sys/types.h> 
 
 typedef struct ebb_request ebb_request;
-typedef struct ebb_element ebb_element;
 typedef struct ebb_request_parser  ebb_request_parser;
-typedef void (*ebb_element_cb)(ebb_request*, ebb_element *);
+typedef void (*ebb_header_cb)(ebb_request*, const char *at, size_t length, int header_index);
+typedef void (*ebb_element_cb)(ebb_request*, const char *at, size_t length);
 
 #define EBB_IDENTITY 0
 #define EBB_CHUNKED  1
@@ -14,28 +14,20 @@ typedef void (*ebb_element_cb)(ebb_request*, ebb_element *);
 #define EBB_RAGEL_STACK_SIZE 10
 
 struct ebb_request {
-  size_t content_length;        /* ro - 0 if unknown */
-  int transfer_encoding;        /* ro - EBB_IDENTITY or EBB_CHUNKED */
-  size_t body_read;             /* ro */
-  int eating_body;              /* ro */
-  int expect_continue;          /* ro */
-  unsigned int version_major;   /* ro */
-  unsigned int version_minor;   /* ro */
-  struct ebb_connection *connection;
+  size_t content_length;             /* ro - 0 if unknown */
+  int transfer_encoding;             /* ro - EBB_IDENTITY or EBB_CHUNKED */
+  size_t body_read;                  /* ro */
+  int eating_body;                   /* ro */
+  int expect_continue;               /* ro */
+  unsigned int version_major;        /* ro */
+  unsigned int version_minor;        /* ro */
+  int number_of_headers;             /* ro */
+  struct ebb_connection *connection; /* ro */
 
   /* Public */
   void *data;
   void (*free)(ebb_request*);
 };
-
-struct ebb_element {
-  const char *base;   /* ro */
-  size_t len;         /* ro */
-  ebb_element *next;  /* ro */
-
-  /* Public */
-  void (*free)(ebb_element*);
-}; 
 
 struct ebb_request_parser {
   int cs;                           /* private */
@@ -43,25 +35,24 @@ struct ebb_request_parser {
   int top;                          /* private */
   size_t chunk_size;                /* private */
   unsigned eating:1;                /* private */
-  struct ebb_connection *connection;
-
-  /* element in progress stack. 
-   * grammar doesn't have more than 3 nested elements
-   */
-  ebb_element *eip_stack[3]; 
-
-  ebb_element *header_field_element;  /* ro */
-  ebb_request *current_request;  /* ro */
+  struct ebb_connection *connection;/* private */
+  ebb_request *current_request;     /* ro */
+  const char *header_field_mark; 
+  const char *header_value_mark; 
+  const char *query_string_mark; 
+  const char *request_path_mark; 
+  const char *request_uri_mark; 
+  const char *request_method_mark; 
+  const char *fragment_mark; 
 
   /* Public */
 
-  ebb_element* (*new_element)(void *);
   ebb_request* (*new_request)(void*);
+  ebb_element_cb body_handler;
 
   void (*request_complete)(ebb_request *);
-  void (*body_handler)(ebb_request *, const char *at, size_t length);
-  void (*header_handler)(ebb_request *, ebb_element *field, ebb_element *value);
-
+  ebb_header_cb header_field;
+  ebb_header_cb header_value;
   ebb_element_cb request_method;
   ebb_element_cb request_uri;
   ebb_element_cb fragment;
@@ -91,28 +82,6 @@ int ebb_request_parser_is_finished
 
 void ebb_request_init
   ( ebb_request *
-  );
-
-void ebb_element_init
-  ( ebb_element *element
-  );
-
-ebb_element* ebb_element_last
-  ( ebb_element *element
-  );
-
-size_t ebb_element_len
-  ( ebb_element *element
-  );
-
-void ebb_element_strcpy
-  ( ebb_element *element
-  , char *dest
-  );
-
-void ebb_element_printf
-  ( ebb_element *element
-  , const char *format
   );
 
 #endif
