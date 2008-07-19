@@ -103,6 +103,14 @@
     CURRENT->transfer_encoding = EBB_CHUNKED;
   }
 
+  action multipart_boundary {
+    if(CURRENT->multipart_boundary_len == EBB_MAX_MULTIPART_BOUNDARY_LEN) {
+      cs = -1;
+      fbreak;
+    }
+    CURRENT->multipart_boundary[CURRENT->multipart_boundary_len++] = *p;
+  } 
+
   action expect_continue {
     CURRENT->expect_continue = TRUE;
   }
@@ -260,11 +268,17 @@
 
 # elements
   token = (ascii -- (CTL | tspecials));
+  quote = "\"";
 #  qdtext = token -- "\""; 
 #  quoted_pair = "\" ascii;
 #  quoted_string = "\"" (qdtext | quoted_pair )* "\"";
 
 #  headers
+
+  Method = ( upper | digit | safe ){1,20} >mark_request_method %request_method;
+
+  HTTP_Version = "HTTP/" digit+ $version_major "." digit+ $version_minor;
+
   scheme = ( alpha | digit | "+" | "-" | "." )* ;
   absolute_uri = (scheme ":" (uchar | reserved )*);
   path = ( pchar+ ( "/" pchar* )* ) ;
@@ -275,43 +289,31 @@
   absolute_path = ( "/"+ rel_path ) >mark_request_path %request_path ("?" query)?;
   Request_URI = ( "*" | absolute_uri | absolute_path ) >mark_request_uri %request_uri;
   Fragment = ( uchar | reserved )* >mark_fragment %fragment;
-  Method = ( upper | digit | safe ){1,20} >mark_request_method %request_method;
-  http_number = (digit+ $version_major "." digit+ $version_minor);
-  HTTP_Version = ( "HTTP/" http_number );
 
   field_name = ( token -- ":" )+;
+  Field_Name = field_name >mark_header_field %write_field;
+
   field_value = ((any - " ") any*)?;
+  Field_Value = field_value >mark_header_value %write_value;
 
-  head_sep = ":" " "*;
-  message_header = field_name head_sep field_value :> CRLF;
+  hsep = ":" " "*;
+  header = (field_name hsep field_value) :> CRLF;
+  Header = ( ("Content-Length"i hsep digit+ $content_length)
+           | ("Content-Type"i hsep 
+              "multipart/form-data" any* 
+              "boundary=" quote token+ $multipart_boundary quote
+             )
+           | ("Transfer-Encoding"i %use_chunked_encoding hsep "identity" %use_identity_encoding)
+           | ("Expect"i hsep "100-continue"i %expect_continue)
+           | ("Trailer"i hsep field_value %trailer)
+           | (Field_Name hsep Field_Value)
+           ) :> CRLF;
 
-  cl = "Content-Length"i %write_field  head_sep
-       digit+ >mark_header_value $content_length %write_value;
-
-  te = "Transfer-Encoding"i %write_field %use_chunked_encoding head_sep
-       "identity"i >mark_header_value %use_identity_encoding %write_value;
-
-  expect = "Expect"i %write_field head_sep
-       "100-continue"i >mark_header_value %expect_continue %write_value;
-
-  t =  "Trailer"i %write_field head_sep
-        field_value >mark_header_value %trailer %write_value;
-
-  rest = (field_name %write_field head_sep field_value >mark_header_value %write_value);
-
-  header  = cl     @(headers,4)
-          | te     @(headers,4)
-          | expect @(headers,4)
-          | t      @(headers,4)
-          | rest   @(headers,1)
-          ;
-
-  HeaderLine = header >mark_header_field :> CRLF %end_header;
   Request_Line = ( Method " " Request_URI ("#" Fragment)? " " HTTP_Version CRLF ) ;
-  RequestHeader = Request_Line HeaderLine* :> CRLF;
+  RequestHeader = Request_Line (Header %end_header)* :> CRLF;
 
 # chunked message
-  trailing_headers = message_header*;
+  trailing_headers = header*;
   #chunk_ext_val   = token | quoted_string;
   chunk_ext_val = token*;
   chunk_ext_name = token*;
@@ -490,5 +492,6 @@ void ebb_request_init
   request->transfer_encoding = EBB_IDENTITY;
   request->connection = NULL;
   request->free = NULL;
+  request->multipart_boundary_len = 0;
 }
 

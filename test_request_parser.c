@@ -160,20 +160,21 @@ const struct request_data get_funky_content_length_body_hello =
   };
 
 // post - one header - body "World"
-const struct request_data post_one_header_body_world =  
-  { raw: "POST /post_one_header_body_world?q=search#hey HTTP/1.1\r\n"
+const struct request_data post_identity_body_world =  
+  { raw: "POST /post_identity_body_world?q=search#hey HTTP/1.1\r\n"
          "Accept: */*\r\n"
+         "Transfer-Encoding: identity\r\n"
          "Content-Length: 5\r\n"
          "\r\n"
          "World"
   , request_method: "POST"
   , query_string: "q=search"
   , fragment: "hey"
-  , request_path: "/post_one_header_body_world"
-  , request_uri: "/post_one_header_body_world?q=search"
-  , num_headers: 2
-  , header_fields: { "Accept", "Content-Length" }
-  , header_values: { "*/*", "5" }
+  , request_path: "/post_identity_body_world"
+  , request_uri: "/post_identity_body_world?q=search"
+  , num_headers: 3
+  , header_fields: { "Accept", "Transfer-Encoding", "Content-Length" }
+  , header_values: { "*/*", "identity", "5" }
   , body: "World"
   };
 
@@ -669,7 +670,7 @@ int main()
   assert(test_error(bad_get_no_headers_no_body)); // error if there is a body without content length
 
   assert(test_request(&get_funky_content_length_body_hello));
-  assert(test_request(&post_one_header_body_world));
+  assert(test_request(&post_identity_body_world));
   assert(test_request(&post_chunked_all_your_base));
   assert(test_request(&two_chunks_mult_zero_end));
   assert(test_request(&chunked_w_trailing_headers));
@@ -688,18 +689,18 @@ int main()
   assert( test_multiple3(&get_no_headers_no_body, &get_funky_content_length_body_hello, &get_no_headers_no_body));
 
   // three requests with bodies -- last is chunked
-  assert( test_multiple3(&get_funky_content_length_body_hello, &post_one_header_body_world, &post_chunked_all_your_base));
+  assert( test_multiple3(&get_funky_content_length_body_hello, &post_identity_body_world, &post_chunked_all_your_base));
 
   // three chunked requests
   assert( test_multiple3(&two_chunks_mult_zero_end, &post_chunked_all_your_base, &chunked_w_trailing_headers));
 
 
   assert(test_scan2(&get_no_headers_no_body, &get_one_header_no_body, &get_no_headers_no_body));
-  assert(test_scan2(&get_funky_content_length_body_hello, &post_one_header_body_world, &post_chunked_all_your_base));
+  assert(test_scan2(&get_funky_content_length_body_hello, &post_identity_body_world, &post_chunked_all_your_base));
   assert(test_scan2(&two_chunks_mult_zero_end, &chunked_w_trailing_headers, &chunked_w_bullshit_after_length));
 
   assert(test_scan3(&get_no_headers_no_body, &get_one_header_no_body, &get_no_headers_no_body));
-  assert(test_scan3(&get_funky_content_length_body_hello, &post_one_header_body_world, &post_chunked_all_your_base));
+  assert(test_scan3(&get_funky_content_length_body_hello, &post_identity_body_world, &post_chunked_all_your_base));
   assert(test_scan3(&two_chunks_mult_zero_end, &chunked_w_trailing_headers, &chunked_w_bullshit_after_length));
 
 

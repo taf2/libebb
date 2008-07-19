@@ -8,14 +8,14 @@ typedef struct ebb_request_parser  ebb_request_parser;
 typedef void (*ebb_header_cb)(ebb_request*, const char *at, size_t length, int header_index);
 typedef void (*ebb_element_cb)(ebb_request*, const char *at, size_t length);
 
-#define EBB_IDENTITY 0
-#define EBB_CHUNKED  1
-
 #define EBB_RAGEL_STACK_SIZE 10
+#define EBB_MAX_MULTIPART_BOUNDARY_LEN 20
 
 struct ebb_request {
   size_t content_length;             /* ro - 0 if unknown */
-  int transfer_encoding;             /* ro - EBB_IDENTITY or EBB_CHUNKED */
+  enum { EBB_IDENTITY
+       , EBB_CHUNKED
+       } transfer_encoding;          /* ro */
   size_t body_read;                  /* ro */
   int eating_body;                   /* ro */
   int expect_continue;               /* ro */
@@ -23,6 +23,8 @@ struct ebb_request {
   unsigned int version_minor;        /* ro */
   int number_of_headers;             /* ro */
   struct ebb_connection *connection; /* ro */
+  char multipart_boundary[EBB_MAX_MULTIPART_BOUNDARY_LEN]; /* ro */
+  unsigned int multipart_boundary_len; /* ro */
 
   /* Public */
   void *data;
@@ -83,5 +85,8 @@ int ebb_request_parser_is_finished
 void ebb_request_init
   ( ebb_request *
   );
+
+#define ebb_request_has_body(request) \
+  (request->transfer_encoding == EBB_CHUNKED || request->content_length > 0 )
 
 #endif
