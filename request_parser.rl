@@ -37,9 +37,23 @@
   action mark_header_value   { parser->header_value_mark   = p; }
   action mark_fragment       { parser->fragment_mark       = p; }
   action mark_query_string   { parser->query_string_mark   = p; }
-  action mark_request_method { parser->request_method_mark = p; }
   action mark_request_path   { parser->request_path_mark   = p; }
   action mark_request_uri    { parser->request_uri_mark    = p; }
+
+  action method_copy      { CURRENT->method = EBB_COPY;      }
+  action method_delete    { CURRENT->method = EBB_DELETE;    }
+  action method_get       { CURRENT->method = EBB_GET;       }
+  action method_head      { CURRENT->method = EBB_HEAD;      }
+  action method_lock      { CURRENT->method = EBB_LOCK;      }
+  action method_mkcol     { CURRENT->method = EBB_MKCOL;     }
+  action method_move      { CURRENT->method = EBB_MOVE;      }
+  action method_options   { CURRENT->method = EBB_OPTIONS;   }
+  action method_post      { CURRENT->method = EBB_POST;      }
+  action method_propfind  { CURRENT->method = EBB_PROPFIND;  }
+  action method_proppatch { CURRENT->method = EBB_PROPPATCH; }
+  action method_put       { CURRENT->method = EBB_PUT;       }
+  action method_trace     { CURRENT->method = EBB_TRACE;     }
+  action method_unlock    { CURRENT->method = EBB_UNLOCK;    }
 
   action write_field { 
     //printf("write_field!\n");
@@ -79,12 +93,6 @@
     //printf("request path\n");
     CALLBACK(request_path);
     parser->request_path_mark = NULL;
-  }
-
-  action request_method { 
-    //printf("request method\n");
-    CALLBACK(request_method);
-    parser->request_method_mark = NULL;
   }
 
   action content_length {
@@ -275,7 +283,21 @@
 
 #  headers
 
-  Method = ( upper | digit | safe ){1,20} >mark_request_method %request_method;
+  Method = ( "COPY"      %method_copy
+           | "DELETE"    %method_delete
+           | "GET"       %method_get
+           | "HEAD"      %method_head
+           | "LOCK"      %method_lock
+           | "MKCOL"     %method_mkcol
+           | "MOVE"      %method_move
+           | "OPTIONS"   %method_options
+           | "POST"      %method_post
+           | "PROPFIND"  %method_propfind
+           | "PROPPATCH" %method_proppatch
+           | "PUT"       %method_put
+           | "TRACE"     %method_trace
+           | "UNLOCK"    %method_unlock
+           );
 
   HTTP_Version = "HTTP/" digit+ $version_major "." digit+ $version_minor;
 
@@ -366,8 +388,7 @@ void ebb_request_parser_init
 
   parser->header_field_mark = parser->header_value_mark   = 
   parser->query_string_mark = parser->request_path_mark   = 
-  parser->request_uri_mark  = parser->request_method_mark = 
-  parser->fragment_mark     = NULL;
+  parser->request_uri_mark  = parser->fragment_mark       = NULL;
 
   parser->new_request = default_new_request;
 
@@ -375,7 +396,6 @@ void ebb_request_parser_init
   parser->body_handler = NULL;
   parser->header_field = NULL;
   parser->header_value = NULL;
-  parser->request_method = NULL;
   parser->request_uri = NULL;
   parser->fragment = NULL;
   parser->request_path = NULL;
@@ -441,7 +461,6 @@ size_t ebb_request_parser_execute
   if(parser->header_value_mark)   parser->header_value_mark   = buffer;
   if(parser->fragment_mark)       parser->fragment_mark       = buffer;
   if(parser->query_string_mark)   parser->query_string_mark   = buffer;
-  if(parser->request_method_mark) parser->request_method_mark = buffer;
   if(parser->request_path_mark)   parser->request_path_mark   = buffer;
   if(parser->request_uri_mark)    parser->request_uri_mark    = buffer;
 
@@ -455,7 +474,6 @@ size_t ebb_request_parser_execute
   HEADER_CALLBACK(header_value);
   CALLBACK(fragment);
   CALLBACK(query_string);
-  CALLBACK(request_method);
   CALLBACK(request_path);
   CALLBACK(request_uri);
 

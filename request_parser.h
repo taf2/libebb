@@ -12,10 +12,25 @@ typedef void (*ebb_element_cb)(ebb_request*, const char *at, size_t length);
 #define EBB_MAX_MULTIPART_BOUNDARY_LEN 20
 
 struct ebb_request {
-  size_t content_length;             /* ro - 0 if unknown */
+  enum { EBB_COPY
+       , EBB_DELETE
+       , EBB_GET
+       , EBB_HEAD
+       , EBB_LOCK
+       , EBB_MKCOL
+       , EBB_MOVE
+       , EBB_OPTIONS
+       , EBB_POST
+       , EBB_PROPFIND
+       , EBB_PROPPATCH
+       , EBB_PUT
+       , EBB_TRACE
+       , EBB_UNLOCK
+       } method;
   enum { EBB_IDENTITY
        , EBB_CHUNKED
        } transfer_encoding;          /* ro */
+  size_t content_length;             /* ro - 0 if unknown */
   size_t body_read;                  /* ro */
   int eating_body;                   /* ro */
   int expect_continue;               /* ro */
@@ -44,7 +59,6 @@ struct ebb_request_parser {
   const char *query_string_mark; 
   const char *request_path_mark; 
   const char *request_uri_mark; 
-  const char *request_method_mark; 
   const char *fragment_mark; 
 
   /* Public */
@@ -55,7 +69,6 @@ struct ebb_request_parser {
   void (*request_complete)(ebb_request *);
   ebb_header_cb header_field;
   ebb_header_cb header_value;
-  ebb_element_cb request_method;
   ebb_element_cb request_uri;
   ebb_element_cb fragment;
   ebb_element_cb request_path;

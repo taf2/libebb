@@ -13,7 +13,7 @@
 static ebb_request_parser parser;
 struct request_data {
   const char *raw;
-  char request_method[MAX_ELEMENT_SIZE];
+  int request_method;
   char request_path[MAX_ELEMENT_SIZE];
   char request_uri[MAX_ELEMENT_SIZE];
   char fragment[MAX_ELEMENT_SIZE];
@@ -33,7 +33,7 @@ const struct request_data curl_get =
          "Host: 0.0.0.0:5000\r\n"
          "Accept: */*\r\n"
          "\r\n"
-  , request_method: "GET"
+  , request_method: EBB_GET
   , query_string: ""
   , fragment: ""
   , request_path: "/test"
@@ -55,7 +55,7 @@ const struct request_data firefox_get =
          "Keep-Alive: 300\r\n"
          "Connection: keep-alive\r\n"
          "\r\n"
-  , request_method: "GET"
+  , request_method: EBB_GET
   , query_string: ""
   , fragment: ""
   , request_path: "/favicon.ico"
@@ -88,7 +88,7 @@ const struct request_data dumbfuck =
   { raw: "GET /dumbfuck HTTP/1.1\r\n"
          "aaaaaaaaaaaaa:++++++++++\r\n"
          "\r\n"
-  , request_method: "GET"
+  , request_method: EBB_GET
   , query_string: ""
   , fragment: ""
   , request_path: "/dumbfuck"
@@ -102,7 +102,7 @@ const struct request_data dumbfuck =
 const struct request_data fragment_in_uri = 
   { raw: "GET /forums/1/topics/2375?page=1#posts-17408 HTTP/1.1\r\n"
          "\r\n"
-  , request_method: "GET"
+  , request_method: EBB_GET
   , query_string: "page=1"
   , fragment: "posts-17408"
   , request_path: "/forums/1/topics/2375"
@@ -117,7 +117,7 @@ const struct request_data fragment_in_uri =
 const struct request_data get_no_headers_no_body =  
   { raw: "GET /get_no_headers_no_body/world HTTP/1.1\r\n"
          "\r\n"
-  , request_method: "GET"
+  , request_method: EBB_GET
   , query_string: ""
   , fragment: ""
   , request_path: "/get_no_headers_no_body/world"
@@ -131,7 +131,7 @@ const struct request_data get_one_header_no_body =
   { raw: "GET /get_one_header_no_body HTTP/1.1\r\n"
          "Accept: */*\r\n"
          "\r\n"
-  , request_method: "GET"
+  , request_method: EBB_GET
   , query_string: ""
   , fragment: ""
   , request_path: "/get_one_header_no_body"
@@ -148,7 +148,7 @@ const struct request_data get_funky_content_length_body_hello =
          "conTENT-Length: 5\r\n"
          "\r\n"
          "HELLO"
-  , request_method: "GET"
+  , request_method: EBB_GET
   , query_string: ""
   , fragment: ""
   , request_path: "/get_funky_content_length_body_hello"
@@ -167,7 +167,7 @@ const struct request_data post_identity_body_world =
          "Content-Length: 5\r\n"
          "\r\n"
          "World"
-  , request_method: "POST"
+  , request_method: EBB_POST
   , query_string: "q=search"
   , fragment: "hey"
   , request_path: "/post_identity_body_world"
@@ -186,7 +186,7 @@ const struct request_data post_chunked_all_your_base =
          "1e\r\nall your base are belong to us\r\n"
          "0\r\n"
          "\r\n"
-  , request_method: "POST"
+  , request_method: EBB_POST
   , query_string: ""
   , fragment: ""
   , request_path: "/post_chunked_all_your_base"
@@ -206,7 +206,7 @@ const struct request_data two_chunks_mult_zero_end =
          "6\r\n world\r\n"
          "000\r\n"
          "\r\n"
-  , request_method: "POST"
+  , request_method: EBB_POST
   , query_string: ""
   , fragment: ""
   , request_path: "/two_chunks_mult_zero_end"
@@ -229,7 +229,7 @@ const struct request_data chunked_w_trailing_headers =
          "Vary: *\r\n"
          "Content-Type: text/plain\r\n"
          "\r\n"
-  , request_method: "POST"
+  , request_method: EBB_POST
   , query_string: ""
   , fragment: ""
   , request_path: "/chunked_w_trailing_headers"
@@ -249,7 +249,7 @@ const struct request_data chunked_w_bullshit_after_length =
          "6; blahblah; blah\r\n world\r\n"
          "0\r\n"
          "\r\n"
-  , request_method: "POST"
+  , request_method: EBB_POST
   , query_string: ""
   , fragment: ""
   , request_path: "/chunked_w_bullshit_after_length"
@@ -278,8 +278,8 @@ int request_data_eq
     printf("query_string '%s' != '%s'\n", r1->query_string, r2->query_string);
     return FALSE;
   }
-  if(0 != strcmp(r1->request_method, r2->request_method)) {
-    printf("request_method '%s' != '%s'\n", r1->request_method, r2->request_method);
+  if(r1->request.method != r2->request_method) {
+    printf("request_method '%d' != '%d'\n", r1->request.method, r2->request_method);
     return FALSE;
   }
   if(0 != strcmp(r1->request_path, r2->request_path)) {
@@ -319,7 +319,7 @@ int request_eq
 ebb_request* new_request ()
 {
   requests[num_requests].num_headers = 0;
-  requests[num_requests].request_method[0] = 0;
+  requests[num_requests].request_method = -1;
   requests[num_requests].request_path[0] = 0;
   requests[num_requests].request_uri[0] = 0;
   requests[num_requests].fragment[0] = 0;
@@ -342,11 +342,6 @@ void request_complete(ebb_request *info)
 {
  // printf("request complete\n");
   num_requests++;
-}
-
-void request_method_cb(ebb_request *request, const char *p, size_t len)
-{
-  strncat(requests[num_requests].request_method, p, len);
 }
 
 void request_path_cb(ebb_request *request, const char *p, size_t len)
@@ -396,7 +391,6 @@ void parser_init()
   parser.request_complete = request_complete;
   parser.header_field = header_field_cb;
   parser.header_value = header_value_cb;
-  parser.request_method = request_method_cb;
   parser.request_path = request_path_cb;
   parser.request_uri = request_uri_cb;
   parser.fragment = fragment_cb;
