@@ -4,9 +4,18 @@
     body {
       background: #fff;
       color: #444;
-      font-size: 14pt;
-      font-family: Palatino;
+      font-size: 12pt;
+      line-height: 16pt;
+  /*  font-family: Palatino;  */
       margin: 3em 0 3em 3em; 
+    }
+
+    code, pre {
+      background: #ffefff;
+    }
+
+    #contents {
+      max-width: 40em;
     }
 
     ul {
@@ -16,48 +25,262 @@
     li {
       margin-top: 0.5em;
       margin-bottom: 0.5em;
-      max-width: 30em;
     }
 
     p {
-      max-width: 30em; 
+      text-align: justify;
     }
   </style>
-  <body>
+  <body> <div id="contents">
     <h1>libebb</h1>
 
     <p>
-    libebb is a lightweight HTTP server library for C.  It abstracts the
-    socket handling and request parsing. It handles persistant connections,
-    pipelined requests, chunked uploads, or any other HTTP/1.1 complient
-    junk you might throw at it.  
+      libebb is a lightweight HTTP server library for C.  It abstracts
+      socket handling and request parsing, leaving the rest up to its users.
+      It will parse most valid HTTP/1.1 connections (persistent, pipelined,
+      and, chunked requests included).
     </p>
+
+    <p>
+      libebb is intended to be used as the central engine for all of the
+      myriad types of web servers.
+    </p>
+
     <ul>
-    <li>there are no allocations made</li>
-    <li>the <a
-      href="http://software.schmorp.de/pkg/libev.html">libev</a> event loop
-    is used.
-    </li>
-    <li>it is single threaded
-    </li>
-    <li>the parser is nearly optimally fast.
-      it is a state machine written in <a
-      href="http://research.cs.queensu.ca/~thurston/ragel/">Ragel</a>
-    </li>
+      <li>there are no allocations made</li>
+      <li>
+        it is single threaded and evented, using the <a
+          href="http://software.schmorp.de/pkg/libev.html">libev</a> event
+        loop
+      </li>
+      <li>
+        the state machine parser, written in <a
+          href="http://research.cs.queensu.ca/~thurston/ragel/">Ragel</a>,
+        is nearly optimally fast.
+      </li>
     </ul>
+
     <p>
-    libebb does not support SSL, but may in the future.
+      libebb is coded for use on any POSIX system.
+      <code>ebb_request_parser</code> is independent of the rest of libebb
+      and should work on any computer.
     </p>
+
     <p>
-    libebb is intended to be used as the central engine in
-    all types of web servers: load balancers (like perlbal), embeded
-    servers (like Mongrel), or even full service servers like Nginx.
+      libebb uses libev and Ragel. Ragel compiles to C and libev can be
+      easily packaged with libebb. Thus in practice libebb will be
+      distributed without any external dependencies. 
+    </p>
+
+    <p>
+      libebb does not support SSL, but may in the future.
+    </p>
+
+    <p>
+      libebb is in the early stages of development and contains many bugs. 
     </p>
 
     <h2>Usage</h2>
 
-    <p>Functionality is provided by implmenting many callbacks.
-
+    <p>
+      libebb is a simple API, mostly it provides callbacks to receive data
+      as it comes through the socket.  There are two classes of callbacks
+      that one will work with: 
     </p>
-  </body>
+    <ul>
+      <li>callbacks to allocate and initialize data for libebb</li>
+      <li>callbacks which provide pointers to request data. (For
+      example, a pointer to where the Request URI is located.)</li>
+    </ul>
+    <p>
+      There are five classes: 
+      <code>ebb_server</code>, 
+      <code>ebb_connection</code>, 
+      <code>ebb_request</code>,
+      <code>ebb_buf</code>, 
+      and 
+      <code>ebb_request_parser</code>. 
+    </p>
+
+    <h3><code>ebb_server</code></h3>
+    <p>
+      <code>ebb_server</code> requires that you provide it with a libev
+      event loop.  This event loop is yours to control as you like, in
+      particular you must be the one to call <code>ev_loop</code>. Ebb needs
+      the loop so it can attach its watchers. 
+    </p>
+
+    <p>
+      The server class also requires that you provide it with a callback
+      <code>new_connection</code>. This callback must return an allocated
+      and initialized <code>ebb_connection</code> structure.  This callback
+      will be made just as the server accepts a client connection but before
+      any data is pulled from the socket.
+    </p>
+
+    <p>
+      The methods and additional documentation can be found in
+      <code>server.h</code>
+    </p>
+
+    <h3><code>ebb_connection</code></h3>
+    <p>
+      This structure contains information and callbacks for a single client
+      connection. Because HTTP supports persistent connections there might
+      be more than one request per connection.
+    </p>
+
+    <p>
+      Once an <code>ebb_connection</code> is returned to
+      <code>ebb_server</code> it begins reading requests from the socket.
+      This data that comes from the socket must be stored somewhere. Because
+      Ebb is agnostic about allocation decisions, it passes this off to the
+      user in the form of a callback: <code>connection-&gt;new_buf</code>.
+      This callback returns a newly allocated and initialized
+      <code>ebb_buf</code> structure. However large this returned buffer is,
+      is how much Ebb will attempt to read from the socket.  What is read
+      (perhaps less than you've given Ebb space for) is stored in the
+      <code>ebb_buf</code>.
+    </p>
+
+    <p>
+      <code>ebb_connection</code> contains in it an
+      <code>ebb_request_parser</code> in which you may set callbacks to
+      obtain request information. 
+    </p>
+
+    <p>
+      Ebb parses the data from the socket immediately. It does not buffer
+      any request data.
+    </p>
+
+    <p>
+      You may access the file descriptor for the client socket inside the
+      <code>ebb_connection</code> structure. Writing the response, in valid
+      HTTP is the user's responsibility. Remember, requests must be returned
+      to client in the same order that they were received.
+    </p>
+
+    <p>
+      To write to the socket first enable the <code>on_writable</code>
+      callback by using <code>ebb_connection_enable_on_writable</code>. Once
+      this is done the <code>on_writable</code> callback will be called each
+      time the socket is available for writing. You will put your socket
+      writing code inside that callback.
+    </p>
+
+    <p>
+      I should note that libebb is totally evented.  Because of this all
+      callbacks ought to be non-blocking. If not you will damage
+      performance.  Ebb is not at all thread safe. You may use threads for
+      long running requests actions (writing to file) but they must not
+      interact with the event loop.
+    </p>
+
+
+    <h3><code>ebb_request_parser</code></h3>
+
+    <p>
+      One does not need to allocate or initialize an
+      <code>ebb_request_parser</code> because it is contained inside each
+      <code>ebb_connection</code>. However one must be familiar with the
+      callbacks that might be set inside this class because they provide the
+      all of the request information.
+    </p>
+
+    <p>
+      The <code>new_request</code> callback is called at the beginning of a
+      request. It must return a newly allocated and initialized
+      <code>ebb_request</code> structure.
+    </p>
+
+    <p>
+      The <code>request_complete</code> callback is called at the end of
+      each request.
+    </p>
+
+    <p>
+      The <code>request_uri</code> callback and all other
+      <code>ebb_element_cb</code> callbacks provide pointers to request data
+      which is stored in <code>ebb_buf</code> structures.  The annoying
+      thing is they do not necessarily provide a complete string.  This is
+      because the <code>ebb_buf</code> might store the data in
+      non-continuous chunks of memory. Thus you might receive a
+      <code>request_uri</code> callback 10 times, each providing just a
+      single character of the request_uri.  Of course, Ebb could buffer this
+      data for you but that would be less evented. Perhaps you don't even
+      need that data. This is the most general solution so as not to
+      infringe on any user's ability to optimize.
+      See <code>request_parser.h</code> for a full list of callbacks that
+      you may provide. (If you don't set them, they are ignored.)
+    </p>
+
+    <p>
+      libebb is designed so that one may use
+      <code>request_parser.{rl,h}</code> independently of the
+      <code>server.{c,h}</code>. If you a general HTTP parser but do not like libev or my
+      socket processing code, feel free to use the request parser alone.
+    </p>
+
+    <h3><code>ebb_request</code></h3>
+
+    <p>
+      This structure provides information about a request. For example,
+      <code>request-&gt;method == EBB_POST</code> would mean the method of
+      the request is <code>POST</code>. See <code>request_parser.h</code>
+      for other data.
+    </p>
+
+    <p>
+      For convince only, if you do not provide the <code>new_request</code>
+      callback in the <code>ebb_request_parser</code> class,  then it will by
+      default use a simple malloc / free method.  (See
+      <code>default_new_new_request()</code>.)
+    </p>
+
+
+    <h3><code>ebb_buf</code></h3>
+
+    <p>
+      <code>ebb_buf</code> is a structure which space for Ebb to read data
+      onto. It is look like this
+    </p>
+
+    <pre>
+struct ebb_buf {
+  char *base;
+  size_t len;
+  void (*free)(ebb_buf*);
+};</pre>
+
+    <p>
+      The <code>base</code> should point to the allocated buffer. The
+      <code>len</code> is its size. The <code>free</code> callback is made
+      when Ebb is done writing and parsing the buffer.
+      You do not necessarily need to free the buffer in the
+      <code>free</code> callback. Especially if you continue to use the
+      pointers that came from the <code>ebb_request_parser</code> callbacks
+      you do not want to free the buffer because then you will not have
+      access to the data any longer. 
+    </p>
+    
+    <p>
+      It is up to you to manage buffers: attach them to requests, allocate
+      them with pools, or malloc and free them immediately.     
+    </p>
+
+    <p>
+      For convince only, if you do not provide the <code>new_buf</code>
+      callback in the <code>ebb_connection</code> class,  then it will by
+      default use a simple malloc / free method.  (See
+      <code>default_new_buf()</code>.)
+    </p>
+
+    <h2>Example</h2>
+
+    <p>
+      A simple example is provided in <code>examples/hello_world.c</code>.
+    </p>
+
+  </div></body>
 </html>
