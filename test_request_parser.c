@@ -28,7 +28,11 @@ static struct request_data requests[5];
 static int num_requests;
 
 const struct request_data curl_get = 
-  { raw: "GET /test HTTP/1.1\r\nUser-Agent: curl/7.18.0 (i486-pc-linux-gnu) libcurl/7.18.0 OpenSSL/0.9.8g zlib/1.2.3.3 libidn/1.1\r\nHost: 0.0.0.0:5000\r\nAccept: */*\r\n\r\n"
+  { raw: "GET /test HTTP/1.1\r\n"
+         "User-Agent: curl/7.18.0 (i486-pc-linux-gnu) libcurl/7.18.0 OpenSSL/0.9.8g zlib/1.2.3.3 libidn/1.1\r\n"
+         "Host: 0.0.0.0:5000\r\n"
+         "Accept: */*\r\n"
+         "\r\n"
   , request_method: "GET"
   , query_string: ""
   , fragment: ""
@@ -41,7 +45,16 @@ const struct request_data curl_get =
   };
 
 const struct request_data firefox_get = 
-  { raw: "GET /favicon.ico HTTP/1.1\r\nHost: 0.0.0.0:5000\r\nUser-Agent: Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.9) Gecko/2008061015 Firefox/3.0\r\nAccept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\nAccept-Language: en-us,en;q=0.5\r\nAccept-Encoding: gzip,deflate\r\nAccept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.7\r\nKeep-Alive: 300\r\nConnection: keep-alive\r\n\r\n"
+  { raw: "GET /favicon.ico HTTP/1.1\r\n"
+         "Host: 0.0.0.0:5000\r\n"
+         "User-Agent: Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.9) Gecko/2008061015 Firefox/3.0\r\n"
+         "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n"
+         "Accept-Language: en-us,en;q=0.5\r\n"
+         "Accept-Encoding: gzip,deflate\r\n"
+         "Accept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.7\r\n"
+         "Keep-Alive: 300\r\n"
+         "Connection: keep-alive\r\n"
+         "\r\n"
   , request_method: "GET"
   , query_string: ""
   , fragment: ""
@@ -72,7 +85,9 @@ const struct request_data firefox_get =
   };
 
 const struct request_data dumbfuck =
-  { raw: "GET /dumbfuck HTTP/1.1\r\naaaaaaaaaaaaa:++++++++++\r\n\r\n"
+  { raw: "GET /dumbfuck HTTP/1.1\r\n"
+         "aaaaaaaaaaaaa:++++++++++\r\n"
+         "\r\n"
   , request_method: "GET"
   , query_string: ""
   , fragment: ""
@@ -85,7 +100,8 @@ const struct request_data dumbfuck =
   };
 
 const struct request_data fragment_in_uri = 
-  { raw: "GET /forums/1/topics/2375?page=1#posts-17408 HTTP/1.1\r\n\r\n"
+  { raw: "GET /forums/1/topics/2375?page=1#posts-17408 HTTP/1.1\r\n"
+         "\r\n"
   , request_method: "GET"
   , query_string: "page=1"
   , fragment: "posts-17408"
@@ -99,7 +115,8 @@ const struct request_data fragment_in_uri =
 
 // get - no headers - no body
 const struct request_data get_no_headers_no_body =  
-  { raw: "GET /get_no_headers_no_body/world HTTP/1.1\r\n\r\n"
+  { raw: "GET /get_no_headers_no_body/world HTTP/1.1\r\n"
+         "\r\n"
   , request_method: "GET"
   , query_string: ""
   , fragment: ""
@@ -111,7 +128,9 @@ const struct request_data get_no_headers_no_body =
 
 // get - one header - no body
 const struct request_data get_one_header_no_body =  
-  { raw: "GET /get_one_header_no_body HTTP/1.1\r\nAccept: */*\r\n\r\n"
+  { raw: "GET /get_one_header_no_body HTTP/1.1\r\n"
+         "Accept: */*\r\n"
+         "\r\n"
   , request_method: "GET"
   , query_string: ""
   , fragment: ""
@@ -125,7 +144,10 @@ const struct request_data get_one_header_no_body =
 
 // get - no headers - body "HELLO"
 const struct request_data get_funky_content_length_body_hello =  
-  { raw: "GET /get_funky_content_length_body_hello HTTP/1.1\r\nconTENT-Length: 5\r\n\r\nHELLO"
+  { raw: "GET /get_funky_content_length_body_hello HTTP/1.1\r\n"
+         "conTENT-Length: 5\r\n"
+         "\r\n"
+         "HELLO"
   , request_method: "GET"
   , query_string: ""
   , fragment: ""
@@ -139,7 +161,11 @@ const struct request_data get_funky_content_length_body_hello =
 
 // post - one header - body "World"
 const struct request_data post_one_header_body_world =  
-  { raw: "POST /post_one_header_body_world?q=search#hey HTTP/1.1\r\nAccept: */*\r\nContent-Length: 5\r\n\r\nWorld"
+  { raw: "POST /post_one_header_body_world?q=search#hey HTTP/1.1\r\n"
+         "Accept: */*\r\n"
+         "Content-Length: 5\r\n"
+         "\r\n"
+         "World"
   , request_method: "POST"
   , query_string: "q=search"
   , fragment: "hey"
@@ -153,7 +179,12 @@ const struct request_data post_one_header_body_world =
 
 // post - no headers - chunked body "all your base are belong to us"
 const struct request_data post_chunked_all_your_base =  
-  { raw: "POST /post_chunked_all_your_base HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n1e\r\nall your base are belong to us\r\n0\r\n\r\n"
+  { raw: "POST /post_chunked_all_your_base HTTP/1.1\r\n"
+         "Transfer-Encoding: chunked\r\n"
+         "\r\n"
+         "1e\r\nall your base are belong to us\r\n"
+         "0\r\n"
+         "\r\n"
   , request_method: "POST"
   , query_string: ""
   , fragment: ""
@@ -167,7 +198,13 @@ const struct request_data post_chunked_all_your_base =
 
 // two chunks ; triple zero ending
 const struct request_data two_chunks_mult_zero_end =  
-  { raw: "POST /two_chunks_mult_zero_end HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n000\r\n\r\n"
+  { raw: "POST /two_chunks_mult_zero_end HTTP/1.1\r\n"
+         "Transfer-Encoding: chunked\r\n"
+         "\r\n"
+         "5\r\nhello\r\n"
+         "6\r\n world\r\n"
+         "000\r\n"
+         "\r\n"
   , request_method: "POST"
   , query_string: ""
   , fragment: ""
@@ -182,7 +219,15 @@ const struct request_data two_chunks_mult_zero_end =
 
 // chunked with trailing headers. blech.
 const struct request_data chunked_w_trailing_headers =  
-  { raw: "POST /chunked_w_trailing_headers HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n0\r\nVary: *\r\nContent-Type: text/plain\r\n\r\n"
+  { raw: "POST /chunked_w_trailing_headers HTTP/1.1\r\n"
+         "Transfer-Encoding: chunked\r\n"
+         "\r\n"
+         "5\r\nhello\r\n"
+         "6\r\n world\r\n"
+         "0\r\n"
+         "Vary: *\r\n"
+         "Content-Type: text/plain\r\n"
+         "\r\n"
   , request_method: "POST"
   , query_string: ""
   , fragment: ""
@@ -196,7 +241,13 @@ const struct request_data chunked_w_trailing_headers =
 
 // with bullshit after the length
 const struct request_data chunked_w_bullshit_after_length =  
-  { raw: "POST /chunked_w_bullshit_after_length HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5; ihatew3;whatthefuck=aretheseparametersfor\r\nhello\r\n6; blahblah; blah\r\n world\r\n0\r\n\r\n"
+  { raw: "POST /chunked_w_bullshit_after_length HTTP/1.1\r\n"
+         "Transfer-Encoding: chunked\r\n"
+         "\r\n"
+         "5; ihatew3;whatthefuck=aretheseparametersfor\r\nhello\r\n"
+         "6; blahblah; blah\r\n world\r\n"
+         "0\r\n"
+         "\r\n"
   , request_method: "POST"
   , query_string: ""
   , fragment: ""

@@ -1,4 +1,5 @@
+*.o
+examples/hello_world
 test_request_parser
-test_server
 request_parser.c
 tags
