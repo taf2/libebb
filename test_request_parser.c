@@ -316,28 +316,6 @@ int request_eq
   return request_data_eq(&requests[index], expected);
 }
 
-ebb_request* new_request ()
-{
-  requests[num_requests].num_headers = 0;
-  requests[num_requests].request_method = -1;
-  requests[num_requests].request_path[0] = 0;
-  requests[num_requests].request_uri[0] = 0;
-  requests[num_requests].fragment[0] = 0;
-  requests[num_requests].query_string[0] = 0;
-  requests[num_requests].body[0] = 0;
-  int i; 
-  for(i = 0; i < MAX_HEADERS; i++) {
-    requests[num_requests].header_fields[i][0] = 0;
-    requests[num_requests].header_values[i][0] = 0;
-  }
-    
-  ebb_request *r = &requests[num_requests].request;
-  ebb_request_init(r);
-  r->data = &requests[num_requests];
- // printf("new request %d\n", num_requests);
-  return r;
-}
-
 void request_complete(ebb_request *info)
 {
  // printf("request complete\n");
@@ -381,6 +359,38 @@ void body_handler(ebb_request *request, const char *p, size_t len)
  // printf("body_handler: '%s'\n", requests[num_requests].body);
 }
 
+ebb_request* new_request ()
+{
+  requests[num_requests].num_headers = 0;
+  requests[num_requests].request_method = -1;
+  requests[num_requests].request_path[0] = 0;
+  requests[num_requests].request_uri[0] = 0;
+  requests[num_requests].fragment[0] = 0;
+  requests[num_requests].query_string[0] = 0;
+  requests[num_requests].body[0] = 0;
+  int i; 
+  for(i = 0; i < MAX_HEADERS; i++) {
+    requests[num_requests].header_fields[i][0] = 0;
+    requests[num_requests].header_values[i][0] = 0;
+  }
+    
+  ebb_request *r = &requests[num_requests].request;
+  ebb_request_init(r);
+
+  r->request_complete = request_complete;
+  r->header_field = header_field_cb;
+  r->header_value = header_value_cb;
+  r->request_path = request_path_cb;
+  r->request_uri = request_uri_cb;
+  r->fragment = fragment_cb;
+  r->query_string = query_string_cb;
+  r->body_handler = body_handler;
+
+  r->data = &requests[num_requests];
+ // printf("new request %d\n", num_requests);
+  return r;
+}
+
 void parser_init()
 {
   num_requests = 0;
@@ -388,14 +398,6 @@ void parser_init()
   ebb_request_parser_init(&parser);
 
   parser.new_request = new_request;
-  parser.request_complete = request_complete;
-  parser.header_field = header_field_cb;
-  parser.header_value = header_value_cb;
-  parser.request_path = request_path_cb;
-  parser.request_uri = request_uri_cb;
-  parser.fragment = fragment_cb;
-  parser.query_string = query_string_cb;
-  parser.body_handler = body_handler;
 }
 
 int test_request

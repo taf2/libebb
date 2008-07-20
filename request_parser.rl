@@ -14,20 +14,20 @@
 #define CONTENT_LENGTH (parser->current_request->content_length)
 
 #define LEN(FROM) (p - parser->FROM##_mark)
-#define CALLBACK(FOR)                         \
-  if(parser->FOR##_mark && parser->FOR) {     \
-    parser->FOR( CURRENT                      \
-               , parser->FOR##_mark           \
-               , p - parser->FOR##_mark       \
-               );                             \
+#define CALLBACK(FOR)                          \
+  if(parser->FOR##_mark && CURRENT->FOR) {     \
+    CURRENT->FOR( CURRENT                      \
+                , parser->FOR##_mark           \
+                , p - parser->FOR##_mark       \
+                );                             \
  }
-#define HEADER_CALLBACK(FOR)                  \
-  if(parser->FOR##_mark && parser->FOR) {     \
-    parser->FOR( CURRENT                      \
-               , parser->FOR##_mark           \
-               , p - parser->FOR##_mark       \
-               , CURRENT->number_of_headers   \
-               );                             \
+#define HEADER_CALLBACK(FOR)                   \
+  if(parser->FOR##_mark && CURRENT->FOR) {     \
+    CURRENT->FOR( CURRENT                      \
+                , parser->FOR##_mark           \
+                , p - parser->FOR##_mark       \
+                , CURRENT->number_of_headers   \
+                );                             \
  }
 
 %%{
@@ -139,8 +139,8 @@
   }
 
   action end_headers {
-    if(parser->headers_complete)
-      parser->headers_complete(CURRENT);
+    if(CURRENT->headers_complete)
+      CURRENT->headers_complete(CURRENT);
   }
 
   action add_to_chunk_size {
@@ -162,12 +162,12 @@
     //printf("chunk_size: %d\n", parser->chunk_size);
     if(parser->chunk_size > REMAINING) {
       parser->eating = TRUE;
-      parser->body_handler(CURRENT, p, REMAINING);
+      CURRENT->body_handler(CURRENT, p, REMAINING);
       parser->chunk_size -= REMAINING;
       fhold; 
       fbreak;
     } else {
-      parser->body_handler(CURRENT, p, parser->chunk_size);
+      CURRENT->body_handler(CURRENT, p, parser->chunk_size);
       p += parser->chunk_size;
       parser->chunk_size = 0;
       parser->eating = FALSE;
@@ -178,8 +178,8 @@
 
   action end_chunked_body {
     //printf("end chunked body\n");
-    if(parser->request_complete)
-      parser->request_complete(CURRENT);
+    if(CURRENT->request_complete)
+      CURRENT->request_complete(CURRENT);
     fret; // goto Request; 
   }
 
@@ -187,7 +187,7 @@
     if(CURRENT && CURRENT->free)
       CURRENT->free(CURRENT);
     CURRENT = parser->new_request(parser->data);
-    CURRENT->connection = parser->connection;
+    CURRENT->parser = parser;
   }
 
   action body_logic {
@@ -201,8 +201,8 @@
        */
       if( CURRENT->content_length == 0) {
 
-        if( parser->request_complete )
-          parser->request_complete(CURRENT);
+        if( CURRENT->request_complete )
+          CURRENT->request_complete(CURRENT);
 
 
       } else if( CURRENT->content_length < REMAINING ) {
@@ -214,16 +214,16 @@
          *
          */
         p += 1;
-        if( parser->body_handler )
-          parser->body_handler(CURRENT, p, CURRENT->content_length); 
+        if( CURRENT->body_handler )
+          CURRENT->body_handler(CURRENT, p, CURRENT->content_length); 
 
         p += CURRENT->content_length;
         CURRENT->body_read = CURRENT->content_length;
 
         assert(0 <= REMAINING);
 
-        if( parser->request_complete )
-          parser->request_complete(CURRENT);
+        if( CURRENT->request_complete )
+          CURRENT->request_complete(CURRENT);
 
         fhold;
 
@@ -239,8 +239,8 @@
         p += 1;
         size_t eat = REMAINING;
 
-        if( parser->body_handler && eat > 0)
-          parser->body_handler(CURRENT, p, eat); 
+        if( CURRENT->body_handler && eat > 0)
+          CURRENT->body_handler(CURRENT, p, eat); 
 
         p += eat;
         CURRENT->body_read += eat;
@@ -361,16 +361,6 @@
 
 #define COPYSTACK(dest, src)  for(i = 0; i < EBB_RAGEL_STACK_SIZE; i++) { dest[i] = src[i]; }
 
-static ebb_request* default_new_request
-  ( void *data
-  )
-{
-  ebb_request *request = malloc(sizeof(ebb_request));
-  ebb_request_init(request);
-  request->free = (void (*)(ebb_request*))free;
-  return request; 
-}
-
 void ebb_request_parser_init
   ( ebb_request_parser *parser
   ) 
@@ -394,16 +384,7 @@ void ebb_request_parser_init
   parser->query_string_mark = parser->request_path_mark   = 
   parser->request_uri_mark  = parser->fragment_mark       = NULL;
 
-  parser->new_request = default_new_request;
-
-  parser->request_complete = NULL;
-  parser->body_handler = NULL;
-  parser->header_field = NULL;
-  parser->header_value = NULL;
-  parser->request_uri = NULL;
-  parser->fragment = NULL;
-  parser->request_path = NULL;
-  parser->query_string = NULL;
+  parser->new_request = NULL;
 }
 
 
@@ -437,7 +418,7 @@ size_t ebb_request_parser_execute
     if(eat == parser->chunk_size) {
       parser->eating = FALSE;
     }
-    parser->body_handler(CURRENT, p, eat);
+    CURRENT->body_handler(CURRENT, p, eat);
     p += eat;
     parser->chunk_size -= eat;
     //printf("eat: %d\n", eat);
@@ -450,13 +431,13 @@ size_t ebb_request_parser_execute
     //printf("eat normal body (before parse)\n");
     size_t eat = MIN(len, CURRENT->content_length - CURRENT->body_read);
 
-    parser->body_handler(CURRENT, p, eat);
+    CURRENT->body_handler(CURRENT, p, eat);
     p += eat;
     CURRENT->body_read += eat;
 
     if(CURRENT->body_read == CURRENT->content_length) {
-      if(parser->request_complete)
-        parser->request_complete(CURRENT);
+      if(CURRENT->request_complete)
+        CURRENT->request_complete(CURRENT);
       CURRENT->eating_body = FALSE;
     }
   }
@@ -512,8 +493,18 @@ void ebb_request_init
   request->version_minor = 0;
   request->number_of_headers = 0;
   request->transfer_encoding = EBB_IDENTITY;
-  request->connection = NULL;
-  request->free = NULL;
   request->multipart_boundary_len = 0;
+  request->parser = NULL;
+
+  request->free = NULL;
+  request->request_complete = NULL;
+  request->headers_complete = NULL;
+  request->body_handler = NULL;
+  request->header_field = NULL;
+  request->header_value = NULL;
+  request->request_uri = NULL;
+  request->fragment = NULL;
+  request->request_path = NULL;
+  request->query_string = NULL;
 }
 

@@ -325,6 +325,16 @@ static ebb_buf* default_new_buf
   return buf;
 }
 
+static ebb_request* new_request_wrapper
+  ( void *data
+  )
+{
+  ebb_connection *connection = data;
+  if(connection->new_request)
+    return connection->new_request(connection);
+  return NULL;
+}
+
 /**
  * Initialize an ebb_connection structure. After calling this function you
  * must setup callbacks for the different actions the server can take. See
@@ -349,7 +359,8 @@ void ebb_connection_init
   connection->timeout = timeout;
 
   ebb_request_parser_init( &connection->parser );
-  connection->parser.connection = connection;
+  connection->parser.data = connection;
+  connection->parser.new_request = new_request_wrapper;
   
   connection->write_watcher.data = connection;
   ev_init (&connection->write_watcher, on_writable);
@@ -361,6 +372,7 @@ void ebb_connection_init
   ev_timer_init(&connection->timeout_watcher, on_timeout, timeout, 0);
 
   connection->new_buf = default_new_buf;
+  connection->new_request = NULL;
   connection->on_timeout = NULL;
   connection->on_writable = NULL;
   connection->free = NULL;

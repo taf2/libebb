@@ -27,9 +27,11 @@ struct ebb_request {
        , EBB_TRACE
        , EBB_UNLOCK
        } method;
+  
   enum { EBB_IDENTITY
        , EBB_CHUNKED
        } transfer_encoding;          /* ro */
+
   size_t content_length;             /* ro - 0 if unknown */
   size_t body_read;                  /* ro */
   int eating_body;                   /* ro */
@@ -37,13 +39,23 @@ struct ebb_request {
   unsigned int version_major;        /* ro */
   unsigned int version_minor;        /* ro */
   int number_of_headers;             /* ro */
-  struct ebb_connection *connection; /* ro */
+  ebb_request_parser *parser;
+
   char multipart_boundary[EBB_MAX_MULTIPART_BOUNDARY_LEN]; /* ro */
   unsigned int multipart_boundary_len; /* ro */
 
   /* Public */
-  void *data;
+  ebb_element_cb request_path;
+  ebb_element_cb query_string;
+  ebb_element_cb request_uri;
+  ebb_element_cb fragment;
+  ebb_header_cb header_field;
+  ebb_header_cb header_value;
+  void (*headers_complete)(ebb_request *);
+  ebb_element_cb body_handler;
+  void (*request_complete)(ebb_request *);
   void (*free)(ebb_request*);
+  void *data;
 };
 
 struct ebb_request_parser {
@@ -52,7 +64,6 @@ struct ebb_request_parser {
   int top;                          /* private */
   size_t chunk_size;                /* private */
   unsigned eating:1;                /* private */
-  struct ebb_connection *connection;/* private */
   ebb_request *current_request;     /* ro */
   const char *header_field_mark; 
   const char *header_value_mark; 
@@ -62,19 +73,7 @@ struct ebb_request_parser {
   const char *fragment_mark; 
 
   /* Public */
-
   ebb_request* (*new_request)(void*);
-  ebb_element_cb body_handler;
-
-  void (*headers_complete)(ebb_request *);
-  void (*request_complete)(ebb_request *);
-  ebb_header_cb header_field;
-  ebb_header_cb header_value;
-  ebb_element_cb request_uri;
-  ebb_element_cb fragment;
-  ebb_element_cb request_path;
-  ebb_element_cb query_string;
-
   void *data;
 };
 

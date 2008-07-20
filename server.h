@@ -68,17 +68,11 @@ struct ebb_connection {
   ev_io read_watcher;          /* private */
   ev_io write_watcher;         /* private */
   ev_timer timeout_watcher;    /* private */
+  ebb_request_parser parser;  
   
   /* Public */
 
-  /* There are many callbacks available from the request parser see
-   * request_parser.h for all of the possibilities.
-   * 
-   * A useful one, for example, is the request_uri callback which sends the
-   * request_uri when it is received. That would be set by
-   * connection->parser.request_uri = my_request_uri_callback;
-   */
-  ebb_request_parser parser;  
+  ebb_request* (*new_request) (ebb_connection*); 
 
   /* The new_buf callback allocates and initializes an ebb_buf structure.
    * By default this is set to a simple malloc() based callback which always
@@ -124,5 +118,7 @@ void ebb_connection_close
 void ebb_connection_enable_on_writable 
   ( ebb_connection *
   );
+
+#define ebb_request_connection(request) ((ebb_connection*)(request->parser->data))
 
 #endif
