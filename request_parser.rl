@@ -40,20 +40,20 @@
   action mark_request_path   { parser->request_path_mark   = p; }
   action mark_request_uri    { parser->request_uri_mark    = p; }
 
-  action method_copy      { CURRENT->method = EBB_COPY;      }
-  action method_delete    { CURRENT->method = EBB_DELETE;    }
-  action method_get       { CURRENT->method = EBB_GET;       }
-  action method_head      { CURRENT->method = EBB_HEAD;      }
-  action method_lock      { CURRENT->method = EBB_LOCK;      }
-  action method_mkcol     { CURRENT->method = EBB_MKCOL;     }
-  action method_move      { CURRENT->method = EBB_MOVE;      }
-  action method_options   { CURRENT->method = EBB_OPTIONS;   }
-  action method_post      { CURRENT->method = EBB_POST;      }
-  action method_propfind  { CURRENT->method = EBB_PROPFIND;  }
-  action method_proppatch { CURRENT->method = EBB_PROPPATCH; }
-  action method_put       { CURRENT->method = EBB_PUT;       }
-  action method_trace     { CURRENT->method = EBB_TRACE;     }
-  action method_unlock    { CURRENT->method = EBB_UNLOCK;    }
+  action method_copy         { CURRENT->method = EBB_COPY;      }
+  action method_delete       { CURRENT->method = EBB_DELETE;    }
+  action method_get          { CURRENT->method = EBB_GET;       }
+  action method_head         { CURRENT->method = EBB_HEAD;      }
+  action method_lock         { CURRENT->method = EBB_LOCK;      }
+  action method_mkcol        { CURRENT->method = EBB_MKCOL;     }
+  action method_move         { CURRENT->method = EBB_MOVE;      }
+  action method_options      { CURRENT->method = EBB_OPTIONS;   }
+  action method_post         { CURRENT->method = EBB_POST;      }
+  action method_propfind     { CURRENT->method = EBB_PROPFIND;  }
+  action method_proppatch    { CURRENT->method = EBB_PROPPATCH; }
+  action method_put          { CURRENT->method = EBB_PUT;       }
+  action method_trace        { CURRENT->method = EBB_TRACE;     }
+  action method_unlock       { CURRENT->method = EBB_UNLOCK;    }
 
   action write_field { 
     //printf("write_field!\n");
@@ -65,10 +65,6 @@
     //printf("write_value!\n");
     HEADER_CALLBACK(header_value);
     parser->header_value_mark = NULL;
-  }
-
-  action end_header {
-    CURRENT->number_of_headers++;
   }
 
   action request_uri { 
@@ -128,7 +124,6 @@
     /* not implemenetd yet. (do requests even have trailing headers?) */
   }
 
-
   action version_major {
     CURRENT->version_major *= 10;
     CURRENT->version_major += *p - '0';
@@ -139,10 +134,19 @@
     CURRENT->version_minor += *p - '0';
   }
 
+  action end_header_line {
+    CURRENT->number_of_headers++;
+  }
+
+  action end_headers {
+    if(parser->headers_complete)
+      parser->headers_complete(CURRENT);
+  }
+
   action add_to_chunk_size {
     //printf("add to chunk size\n");
     parser->chunk_size *= 16;
-    /* XXX: this can be optimized slightly */
+    /* XXX: this can be optimized slightly  */
     if( 'A' <= *p && *p <= 'F') 
       parser->chunk_size += *p - 'A' + 10;
     else if( 'a' <= *p && *p <= 'f') 
@@ -297,7 +301,7 @@
            | "PUT"       %method_put
            | "TRACE"     %method_trace
            | "UNLOCK"    %method_unlock
-           );
+           ); # Not allowing extension methods
 
   HTTP_Version = "HTTP/" digit+ $version_major "." digit+ $version_minor;
 
@@ -332,7 +336,7 @@
            ) :> CRLF;
 
   Request_Line = ( Method " " Request_URI ("#" Fragment)? " " HTTP_Version CRLF ) ;
-  RequestHeader = Request_Line (Header %end_header)* :> CRLF;
+  RequestHeader = Request_Line (Header %end_header_line)* :> CRLF @end_headers;
 
 # chunked message
   trailing_headers = header*;

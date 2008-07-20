@@ -66,6 +66,7 @@ struct ebb_request_parser {
   ebb_request* (*new_request)(void*);
   ebb_element_cb body_handler;
 
+  void (*headers_complete)(ebb_request *);
   void (*request_complete)(ebb_request *);
   ebb_header_cb header_field;
   ebb_header_cb header_value;

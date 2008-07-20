@@ -31,6 +31,10 @@ wc:
 test: test_request_parser
 	./test_request_parser
 
+upload_website:
+	scp -r doc/index.html doc/icon.png rydahl@tinyclouds.org:~/web/public/libebb
+
+
 clean:
 	@-rm -f *.o
 	@-rm -f test_request_parser

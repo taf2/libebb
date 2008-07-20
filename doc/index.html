@@ -3,7 +3,7 @@
   <style>
     body {
       background: #fff;
-      color: #444;
+      color: #2e3436;
       font-size: 12pt;
       line-height: 16pt;
   /*  font-family: Palatino;  */
@@ -30,46 +30,36 @@
     p {
       text-align: justify;
     }
+
+
+    img {
+      float: left;
+      margin: 0 1em 1em 0;
+    }
+
+    p { clear: both; }
   </style>
   <body> <div id="contents">
+    <img src="icon.png"/>
     <h1>libebb</h1>
 
     <p>
-      libebb is a lightweight HTTP server library for C.  It abstracts
-      socket handling and request parsing, leaving the rest up to its users.
-      It will parse most valid HTTP/1.1 connections (persistent, pipelined,
-      and, chunked requests included).
+      libebb is a lightweight high-performance HTTP server library for C.
+      It lays the foundation for larger web servers by providing the socket
+      juggling and request parsing. By implementing nearly exactly the
+      HTTP/1.1 grammar provided in RFC2612,  libebb understands most most
+      valid HTTP/1.1 connections (persistent, pipelined, and chunked
+      requests included) and rejects invalid or malicious requests.  The
+      library uses a strict single threaded evented design, buffering
+      nothing; most of the API is registering callbacks.
     </p>
 
     <p>
-      libebb is intended to be used as the central engine for all of the
-      myriad types of web servers.
-    </p>
-
-    <ul>
-      <li>there are no allocations made</li>
-      <li>
-        it is single threaded and evented, using the <a
-          href="http://software.schmorp.de/pkg/libev.html">libev</a> event
-        loop
-      </li>
-      <li>
-        the state machine parser, written in <a
-          href="http://research.cs.queensu.ca/~thurston/ragel/">Ragel</a>,
-        is nearly optimally fast.
-      </li>
-    </ul>
-
-    <p>
-      libebb is coded for use on any POSIX system.
-      <code>ebb_request_parser</code> is independent of the rest of libebb
-      and should work on any computer.
-    </p>
-
-    <p>
-      libebb uses libev and Ragel. Ragel compiles to C and libev can be
-      easily packaged with libebb. Thus in practice libebb will be
-      distributed without any external dependencies. 
+      libebb intends to be the central engine for new high-performance
+      webservers or web frameworks.  Towards this goal it takes a
+      mimimalistic philosophy and attemps to not interfere with the goals of
+      the web server designer.  In particular, it passes all decisions of
+      memory allocation to the user of the library.
     </p>
 
     <p>
@@ -77,7 +67,13 @@
     </p>
 
     <p>
-      libebb is in the early stages of development and contains many bugs. 
+      libebb is in the early stages of development and probably contains
+      many bugs. The API is subject to radical changes.  If you're
+      interested do <a
+        href="http://github.com/ry/libebb/tree/master">checkout the
+        source</a> and <a href="mailto:ry@tinyclouds.org">offer
+        feedback</a>.  
+      Releases will be made when it proves stable.
     </p>
 
     <h2>Usage</h2>
@@ -218,8 +214,9 @@
     <p>
       libebb is designed so that one may use
       <code>request_parser.{rl,h}</code> independently of the
-      <code>server.{c,h}</code>. If you a general HTTP parser but do not like libev or my
-      socket processing code, feel free to use the request parser alone.
+      <code>server.{c,h}</code>. If you need a general HTTP parser but do
+      not like libev or my socket processing code, feel free to use the
+      request parser alone.
     </p>
 
     <h3><code>ebb_request</code></h3>
@@ -233,9 +230,9 @@
 
     <p>
       For convince only, if you do not provide the <code>new_request</code>
-      callback in the <code>ebb_request_parser</code> class,  then it will by
-      default use a simple malloc / free method.  (See
-      <code>default_new_new_request()</code>.)
+      callback in the <code>ebb_request_parser</code> class,  then it will
+      by default use a simple malloc / free method.  (See
+      <code>default_new_request()</code> for details.)
     </p>
 
 
@@ -281,6 +278,6 @@ struct ebb_buf {
     <p>
       A simple example is provided in <code>examples/hello_world.c</code>.
     </p>
-
+    
   </div></body>
 </html>
