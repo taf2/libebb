@@ -86,28 +86,11 @@ struct ebb_request_parser {
   void *data;
 };
 
-void ebb_request_parser_init
-  ( ebb_request_parser *parser
-  );
-
-size_t ebb_request_parser_execute
-  ( ebb_request_parser *parser
-  , const char *data
-  , size_t len
-  );
-
-int ebb_request_parser_has_error
-  ( ebb_request_parser *parser
-  );
-
-int ebb_request_parser_is_finished
-  ( ebb_request_parser *parser
-  );
-
-void ebb_request_init
-  ( ebb_request *
-  );
-
+void ebb_request_parser_init(ebb_request_parser *parser);
+size_t ebb_request_parser_execute(ebb_request_parser *parser, const char *data, size_t len);
+int ebb_request_parser_has_error(ebb_request_parser *parser);
+int ebb_request_parser_is_finished(ebb_request_parser *parser);
+void ebb_request_init(ebb_request *);
 #define ebb_request_has_body(request) \
   (request->transfer_encoding == EBB_CHUNKED || request->content_length > 0 )
 

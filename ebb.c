@@ -39,11 +39,7 @@ static void set_nonblock (int fd)
 /* Internal callback 
  * called by connection->timeout_watcher
  */
-static void on_timeout 
-  ( struct ev_loop *loop
-  , ev_timer *watcher
-  , int revents
-  )
+static void on_timeout(struct ev_loop *loop, ev_timer *watcher, int revents)
 {
   ebb_connection *connection = watcher->data;
 
@@ -63,11 +59,7 @@ static void on_timeout
 /* Internal callback 
  * called by connection->wrte_watcher
  */
-static void on_writable 
-  ( struct ev_loop *loop
-  , ev_io *watcher
-  , int revents
-  )
+static void on_writable(struct ev_loop *loop ,ev_io *watcher, int revents)
 {
   ebb_connection *connection = watcher->data;
 
@@ -88,11 +80,7 @@ static void on_writable
 /* Internal callback 
  * called by connection->read_watcher
  */
-static void on_readable 
-  ( struct ev_loop *loop
-  , ev_io *watcher
-  , int revents
-  )
+static void on_readable(struct ev_loop *loop, ev_io *watcher, int revents)
 {
   ebb_connection *connection = watcher->data;
   
@@ -140,11 +128,7 @@ error:
 /* Internal callback 
  * Called by server->connection_watcher.
  */
-static void on_connection
-  ( struct ev_loop *loop
-  , ev_io *watcher
-  , int revents
-  )
+static void on_connection(struct ev_loop *loop, ev_io *watcher, int revents)
 {
   ebb_server *server = watcher->data;
 
@@ -201,10 +185,7 @@ static void on_connection
  * Begin the server listening on a file descriptor.  This DOES NOT start the
  * event loop.  Start the event loop after making this call.
  */
-int ebb_server_listen_on_fd
-  ( ebb_server *server
-  , const int fd 
-  )
+int ebb_server_listen_on_fd(ebb_server *server, const int fd)
 {
   assert(server->listening == FALSE);
 
@@ -229,10 +210,7 @@ int ebb_server_listen_on_fd
  * Begin the server listening on a file descriptor This DOES NOT start the
  * event loop. Start the event loop after making this call.
  */
-int ebb_server_listen_on_port
-  ( ebb_server *server
-  , const int port
-  )
+int ebb_server_listen_on_port(ebb_server *server, const int port)
 {
   int fd = -1;
   struct linger ling = {0, 0};
@@ -282,9 +260,7 @@ error:
  * Stops the server. Will not accept new connections.  Does not drop
  * existing connections.
  */
-void ebb_server_unlisten
-  ( ebb_server *server
-  )
+void ebb_server_unlisten(ebb_server *server)
 {
   if(server->listening) {
     ev_io_stop(server->loop, &server->connection_watcher);
@@ -303,10 +279,7 @@ void ebb_server_unlisten
  * @param server the server to initialize
  * @param loop a libev loop
  */
-void ebb_server_init
-  ( ebb_server *server
-  , struct ev_loop *loop
-  )
+void ebb_server_init(ebb_server *server, struct ev_loop *loop)
 {
   server->loop = loop;
   server->listening = FALSE;
@@ -319,17 +292,13 @@ void ebb_server_init
   server->data = NULL;
 }
 
-static void default_buf_free 
-  ( ebb_buf *buf
-  )
+static void default_buf_free(ebb_buf *buf)
 {
   free(buf->base);
   free(buf);
 }
 
-static ebb_buf* default_new_buf
-  ( ebb_connection *connection
-  )
+static ebb_buf* default_new_buf(ebb_connection *connection)
 {
   ebb_buf *buf = malloc(sizeof(ebb_buf));
   buf->base = malloc(4*1024);
@@ -338,9 +307,7 @@ static ebb_buf* default_new_buf
   return buf;
 }
 
-static ebb_request* new_request_wrapper
-  ( void *data
-  )
+static ebb_request* new_request_wrapper(void *data)
 {
   ebb_connection *connection = data;
   if(connection->new_request)
@@ -360,10 +327,7 @@ static ebb_request* new_request_wrapper
  * @param connection the connection to initialize
  * @param timeout    the timeout in seconds
  */
-void ebb_connection_init
-  ( ebb_connection *connection
-  , float timeout
-  )
+void ebb_connection_init(ebb_connection *connection, float timeout)
 {
   connection->fd = -1;
   connection->server = NULL;
@@ -392,9 +356,7 @@ void ebb_connection_init
   connection->data = NULL;
 }
 
-void ebb_connection_close
-  ( ebb_connection *connection
-  )
+void ebb_connection_close(ebb_connection *connection)
 {
   if(connection->open) {
     ev_io_stop(connection->server->loop, &connection->read_watcher);
@@ -409,9 +371,7 @@ void ebb_connection_close
  * It will be called when the socket is okay to write to.  Stop the callback
  * by returning EBB_STOP from connection->on_writable.
  */
-void ebb_connection_enable_on_writable 
-  ( ebb_connection *connection
-  )
+void ebb_connection_enable_on_writable(ebb_connection *connection)
 {
   ev_io_start(connection->server->loop, &connection->write_watcher);
 }

@@ -44,24 +44,10 @@ struct ebb_server {
   void *data;
 };
 
-void ebb_server_init
-  ( ebb_server *server
-  , struct ev_loop *loop
-  );
-
-int ebb_server_listen_on_port
-  ( ebb_server *server
-  , const int port
-  );
-
-int ebb_server_listen_on_fd
-  ( ebb_server *server
-  , const int sfd 
-  );
-
-void ebb_server_unlisten
-  ( ebb_server *server
-  );
+void ebb_server_init( ebb_server *server, struct ev_loop *loop);
+int ebb_server_listen_on_port(ebb_server *server, const int port);
+int ebb_server_listen_on_fd(ebb_server *server, const int sfd);
+void ebb_server_unlisten(ebb_server *server);
 
 struct ebb_connection {
   int fd;                      /* ro */
@@ -112,18 +98,9 @@ struct ebb_connection {
   void *data;
 };
 
-void ebb_connection_init
-  ( ebb_connection *connection
-  , float timeout
-  );
-
-void ebb_connection_close
-  ( ebb_connection *
-  );
-
-void ebb_connection_enable_on_writable 
-  ( ebb_connection *
-  );
+void ebb_connection_init(ebb_connection *connection, float timeout);
+void ebb_connection_close(ebb_connection *);
+void ebb_connection_enable_on_writable(ebb_connection *);
 
 #define ebb_request_connection(request) ((ebb_connection*)(request->parser->data))
 

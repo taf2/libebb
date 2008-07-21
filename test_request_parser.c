@@ -266,6 +266,22 @@ const struct request_data chunked_w_bullshit_after_length =
   , body: "hello world"
   };
 
+const struct request_data *fixtures[] =
+  { &curl_get 
+  , &firefox_get 
+  , &dumbfuck
+  , &fragment_in_uri 
+  , &get_no_headers_no_body  
+  , &get_one_header_no_body  
+  , &get_funky_content_length_body_hello  
+  , &post_identity_body_world  
+  , &post_chunked_all_your_base  
+  , &two_chunks_mult_zero_end  
+  , &chunked_w_trailing_headers  
+  , &chunked_w_bullshit_after_length  
+  , NULL
+  };
+
 
 int request_data_eq
   ( struct request_data *r1

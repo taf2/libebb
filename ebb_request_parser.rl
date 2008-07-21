@@ -371,9 +371,7 @@
 
 #define COPYSTACK(dest, src)  for(i = 0; i < EBB_RAGEL_STACK_SIZE; i++) { dest[i] = src[i]; }
 
-void ebb_request_parser_init
-  ( ebb_request_parser *parser
-  ) 
+void ebb_request_parser_init(ebb_request_parser *parser) 
 {
   int i;
 
@@ -399,11 +397,7 @@ void ebb_request_parser_init
 
 
 /** exec **/
-size_t ebb_request_parser_execute
-  ( ebb_request_parser *parser
-  , const char *buffer
-  , size_t len
-  )
+size_t ebb_request_parser_execute(ebb_request_parser *parser, const char *buffer, size_t len)
 {
   const char *p, *pe;
   int i, cs = parser->cs;
@@ -475,23 +469,17 @@ size_t ebb_request_parser_execute
   return(p - buffer);
 }
 
-int ebb_request_parser_has_error
-  ( ebb_request_parser *parser
-  ) 
+int ebb_request_parser_has_error(ebb_request_parser *parser) 
 {
   return parser->cs == ebb_request_parser_error;
 }
 
-int ebb_request_parser_is_finished
-  ( ebb_request_parser *parser
-  ) 
+int ebb_request_parser_is_finished(ebb_request_parser *parser) 
 {
   return parser->cs == ebb_request_parser_first_final;
 }
 
-void ebb_request_init
-  ( ebb_request *request
-  )
+void ebb_request_init(ebb_request *request)
 {
   request->expect_continue = FALSE;
   request->eating_body = 0;
