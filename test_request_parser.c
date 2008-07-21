@@ -1,3 +1,9 @@
+/* unit tests for request parser
+ * Copyright 2008 ryah dahl, ry at tiny clouds punkt org
+ *
+ * This software may be distributed under the "MIT" license included in the
+ * README
+ */
 #include "ebb_request_parser.h"
 #include <stdlib.h>
 #include <assert.h>

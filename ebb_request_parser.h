@@ -1,3 +1,12 @@
+/* HTTP/1.1 Parser
+ * Copyright 2008 ryah dahl, ry at tiny clouds punkt org
+ *
+ * Based on Zed Shaw's parser for Mongrel.
+ * Copyright (c) 2005 Zed A. Shaw
+ *
+ * This software may be distributed under the "MIT" license included in the
+ * README
+ */
 #ifndef ebb_request_parser_h
 #define ebb_request_parser_h
 

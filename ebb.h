@@ -1,3 +1,9 @@
+/* libebb web server library
+ * Copyright 2008 ryah dahl, ry at tiny clouds punkt org
+ *
+ * This software may be distributed under the "MIT" license included in the
+ * README
+ */
 #ifndef server_h
 #define server_h
 
