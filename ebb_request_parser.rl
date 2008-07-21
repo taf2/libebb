@@ -447,7 +447,6 @@ size_t ebb_request_parser_execute
 
     if(CURRENT->body_read == CURRENT->content_length) {
       END_REQUEST;
-      CURRENT->eating_body = FALSE;
     }
   }
 
