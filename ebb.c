@@ -89,6 +89,11 @@ static void on_readable
   )
 {
   ebb_connection *connection = watcher->data;
+  
+  if(EV_ERROR & revents) {
+    error(0, 0, "on_readable() got error event, closing connection.\n");
+    goto error;
+  }
 
   ebb_buf *buf = NULL;
   if(connection->new_buf)
@@ -113,6 +118,7 @@ static void on_readable
 
   /* parse error? just drop the client. screw the 400 response */
   if(ebb_request_parser_has_error(&connection->parser)) goto error;
+
 
   if(buf->free)
     buf->free(buf);
@@ -145,6 +151,7 @@ static void on_connection
     ebb_server_unlisten(server);
     return;
   }
+
   
   struct sockaddr_in addr; // connector's address information
   socklen_t addr_len = sizeof(addr); 
@@ -171,7 +178,7 @@ static void on_connection
   connection->server = server;
 
   memcpy(&connection->sockaddr, &addr, addr_len);
-  
+
   if(server->port[0] != '\0')
     connection->ip = inet_ntoa(connection->sockaddr.sin_addr);  
 
@@ -384,10 +391,10 @@ void ebb_connection_close
   )
 {
   if(connection->open) {
-    close(connection->fd);
     ev_io_stop(connection->server->loop, &connection->read_watcher);
     ev_io_stop(connection->server->loop, &connection->write_watcher);
     ev_timer_stop(connection->server->loop, &connection->timeout_watcher);
+    close(connection->fd);
     connection->open = FALSE;
   }
 }

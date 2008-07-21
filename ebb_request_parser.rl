@@ -29,6 +29,12 @@
                 , CURRENT->number_of_headers   \
                 );                             \
  }
+#define END_REQUEST                            \
+    if(CURRENT->request_complete)              \
+      CURRENT->request_complete(CURRENT);      \
+    if(CURRENT->free)                          \
+      CURRENT->free(CURRENT);                  \
+    CURRENT = NULL;
 
 %%{
   machine ebb_request_parser;
@@ -178,14 +184,12 @@
 
   action end_chunked_body {
     //printf("end chunked body\n");
-    if(CURRENT->request_complete)
-      CURRENT->request_complete(CURRENT);
+    END_REQUEST;
     fret; // goto Request; 
   }
 
   action start_req {
-    if(CURRENT && CURRENT->free)
-      CURRENT->free(CURRENT);
+    assert(CURRENT == NULL);
     CURRENT = parser->new_request(parser->data);
     CURRENT->parser = parser;
   }
@@ -201,9 +205,7 @@
        */
       if( CURRENT->content_length == 0) {
 
-        if( CURRENT->request_complete )
-          CURRENT->request_complete(CURRENT);
-
+        END_REQUEST;
 
       } else if( CURRENT->content_length < REMAINING ) {
         /* 
@@ -222,8 +224,7 @@
 
         assert(0 <= REMAINING);
 
-        if( CURRENT->request_complete )
-          CURRENT->request_complete(CURRENT);
+        END_REQUEST;
 
         fhold;
 
@@ -436,8 +437,7 @@ size_t ebb_request_parser_execute
     CURRENT->body_read += eat;
 
     if(CURRENT->body_read == CURRENT->content_length) {
-      if(CURRENT->request_complete)
-        CURRENT->request_complete(CURRENT);
+      END_REQUEST;
       CURRENT->eating_body = FALSE;
     }
   }
