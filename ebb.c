@@ -14,8 +14,8 @@
 
 #include <ev.h>
 
-#include "server.h"
-#include "request_parser.h"
+#include "ebb.h"
+#include "ebb_request_parser.h"
 
 #define TRUE 1
 #define FALSE 0

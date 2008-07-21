@@ -2,31 +2,31 @@ LIBEV = ${HOME}/local/libev
 GCC_OPTS  = -fPIC -g -Wall 
 
 #libebb.so.0.0.1: objects
-#	gcc -shared -Wl,-soname,libebb.so.0 -o $@ server.o request_parser.o
+#	gcc -shared -Wl,-soname,libebb.so.0 -o $@ ebb.o ebb_request_parser.o
 
-objects: server.o request_parser.o 
+objects: ebb.o ebb_request_parser.o 
 
-server.o: server.c server.h
+ebb.o: ebb.c ebb.h
 	gcc -fPIC -I${LIBEV}/include -c $< -o $@ -g -Wall
 
-request_parser.o: request_parser.c request_parser.h
+ebb_request_parser.o: ebb_request_parser.c ebb_request_parser.h
 	gcc ${GCC_OPTS} -c $< -o $@ 
 
-request_parser.c: request_parser.rl
+ebb_request_parser.c: ebb_request_parser.rl
 	ragel -s -G2 $< -o $@
 
-test_request_parser: test_request_parser.c request_parser.o
+test_request_parser: test_request_parser.c ebb_request_parser.o
 	gcc ${GCC_OPTS} -lefence  $^ -o $@
 
 examples: examples/hello_world
 
-examples/hello_world: examples/hello_world.c server.o request_parser.o
+examples/hello_world: examples/hello_world.c ebb.o ebb_request_parser.o
 	gcc ${GCC_OPTS} -lefence -I. -L${LIBEV}/lib -lev -I${LIBEV}/include $^ -o $@
 
 .PHONY: clean test clobber
 
 wc:
-	wc -l request_parser.rl request_parser.h server.c server.h test_*.c
+	wc -l ebb_request_parser.rl ebb_request_parser.h ebb.c ebb.h test_*.c
 
 test: test_request_parser
 	./test_request_parser
@@ -42,4 +42,4 @@ clean:
 	@-rm -f libebb.so.0.0.1
 	
 clobber: clean
-	@-rm -f request_parser.c
+	@-rm -f ebb_request_parser.c

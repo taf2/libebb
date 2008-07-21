@@ -44,22 +44,22 @@
     <h1>libebb</h1>
 
     <p>
-      libebb is a lightweight high-performance HTTP server library for C.
-      It lays the foundation for larger web servers by providing the socket
-      juggling and request parsing. By implementing nearly exactly the
-      HTTP/1.1 grammar provided in RFC2612,  libebb understands most most
-      valid HTTP/1.1 connections (persistent, pipelined, and chunked
-      requests included) and rejects invalid or malicious requests.  The
-      library uses a strict single threaded evented design, buffering
-      nothing; most of the API is registering callbacks.
+      libebb is a lightweight HTTP server library for C.  It lays the
+      foundation for larger web servers by providing the socket juggling and
+      request parsing. By implementing nearly exactly the HTTP/1.1 grammar
+      provided in RFC2612,  libebb understands most most valid HTTP/1.1
+      connections (persistent, pipelined, and chunked requests included) and
+      rejects invalid or malicious requests.  The library uses a strict
+      single threaded evented design, buffering nothing; most of the API is
+      registering callbacks.
     </p>
 
     <p>
-      libebb intends to be the central engine for new high-performance
-      webservers or web frameworks.  Towards this goal it takes a
-      mimimalistic philosophy and attemps to not interfere with the goals of
-      the web server designer.  In particular, it passes all decisions of
-      memory allocation to the user of the library.
+      libebb intends to be the central engine for new high-performance web
+      servers. Towards this goal it takes a mimimalistic philosophy and
+      attemps to not interfere with the goals of the server designer.  For
+      example, it passes all decisions of memory allocation to the user of
+      the library.
     </p>
 
     <p>
@@ -141,8 +141,8 @@
 
     <p>
       <code>ebb_connection</code> contains in it an
-      <code>ebb_request_parser</code> in which you may set callbacks to
-      obtain request information. 
+      <code>ebb_request_parser</code>. You probably don't have to interact
+      with it directly.
     </p>
 
     <p>
@@ -166,7 +166,13 @@
     </p>
 
     <p>
-      I should note that libebb is totally evented.  Because of this all
+      The <code>new_request</code> callback is called at the beginning of a
+      request. It must return a newly allocated and initialized
+      <code>ebb_request</code> structure.
+    </p>
+
+    <p>
+      Note that libebb is totally evented.  Because of this all
       callbacks ought to be non-blocking. If not you will damage
       performance.  Ebb is not at all thread safe. You may use threads for
       long running requests actions (writing to file) but they must not
@@ -174,20 +180,14 @@
     </p>
 
 
-    <h3><code>ebb_request_parser</code></h3>
+    <h3><code>ebb_request</code></h3>
 
     <p>
-      One does not need to allocate or initialize an
-      <code>ebb_request_parser</code> because it is contained inside each
-      <code>ebb_connection</code>. However one must be familiar with the
-      callbacks that might be set inside this class because they provide the
-      all of the request information.
-    </p>
-
-    <p>
-      The <code>new_request</code> callback is called at the beginning of a
-      request. It must return a newly allocated and initialized
-      <code>ebb_request</code> structure.
+      This structure provides information about a request. For example,
+      <code>request-&gt;method == EBB_POST</code> would mean the method of
+      the request is <code>POST</code>. There are also many callback
+      pointers in the structure which can be set to handle data from a
+      request as it's parsed.
     </p>
 
     <p>
@@ -209,30 +209,6 @@
       infringe on any user's ability to optimize.
       See <code>request_parser.h</code> for a full list of callbacks that
       you may provide. (If you don't set them, they are ignored.)
-    </p>
-
-    <p>
-      libebb is designed so that one may use
-      <code>request_parser.{rl,h}</code> independently of the
-      <code>server.{c,h}</code>. If you need a general HTTP parser but do
-      not like libev or my socket processing code, feel free to use the
-      request parser alone.
-    </p>
-
-    <h3><code>ebb_request</code></h3>
-
-    <p>
-      This structure provides information about a request. For example,
-      <code>request-&gt;method == EBB_POST</code> would mean the method of
-      the request is <code>POST</code>. See <code>request_parser.h</code>
-      for other data.
-    </p>
-
-    <p>
-      For convince only, if you do not provide the <code>new_request</code>
-      callback in the <code>ebb_request_parser</code> class,  then it will
-      by default use a simple malloc / free method.  (See
-      <code>default_new_request()</code> for details.)
     </p>
 
 
@@ -272,6 +248,24 @@ struct ebb_buf {
       default use a simple malloc / free method.  (See
       <code>default_new_buf()</code>.)
     </p>
+
+    <h3><code>ebb_request_parser</code></h3>
+
+    <p>
+      The request parser is used internally and will not be accessed
+      directly by the user.
+      It is contained inside each
+      <code>ebb_connection</code>. 
+    </p>
+
+    <p>
+      libebb is designed so that one may use
+      <code>request_parser.{rl,h}</code> independently of the
+      <code>server.{c,h}</code>. If you need a general HTTP parser but do
+      not like libev or my socket processing code, feel free to use the
+      request parser alone.
+    </p>
+
 
     <h2>Example</h2>
 

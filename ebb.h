@@ -1,7 +1,7 @@
 #ifndef server_h
 #define server_h
 
-#include "request_parser.h"
+#include "ebb_request_parser.h"
 #include <ev.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
