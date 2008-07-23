@@ -48,6 +48,7 @@ struct ebb_request {
   unsigned int version_major;        /* ro */
   unsigned int version_minor;        /* ro */
   int number_of_headers;             /* ro */
+  int keep_alive;                    /* private - use ebb_request_should_keep_alive */
   ebb_request_parser *parser;
 
   char multipart_boundary[EBB_MAX_MULTIPART_BOUNDARY_LEN]; /* ro */
@@ -91,6 +92,7 @@ size_t ebb_request_parser_execute(ebb_request_parser *parser, const char *data, 
 int ebb_request_parser_has_error(ebb_request_parser *parser);
 int ebb_request_parser_is_finished(ebb_request_parser *parser);
 void ebb_request_init(ebb_request *);
+int ebb_request_should_keep_alive(ebb_request *request);
 #define ebb_request_has_body(request) \
   (request->transfer_encoding == EBB_CHUNKED || request->content_length > 0 )
 

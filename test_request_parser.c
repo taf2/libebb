@@ -28,6 +28,7 @@ struct request_data {
   int num_headers;
   char header_fields[MAX_HEADERS][MAX_ELEMENT_SIZE];
   char header_values[MAX_HEADERS][MAX_ELEMENT_SIZE];
+  int should_keep_alive;
   ebb_request request;
 };
 static struct request_data requests[5];
@@ -39,6 +40,7 @@ const struct request_data curl_get =
          "Host: 0.0.0.0:5000\r\n"
          "Accept: */*\r\n"
          "\r\n"
+  , should_keep_alive: TRUE
   , request_method: EBB_GET
   , query_string: ""
   , fragment: ""
@@ -61,6 +63,7 @@ const struct request_data firefox_get =
          "Keep-Alive: 300\r\n"
          "Connection: keep-alive\r\n"
          "\r\n"
+  , should_keep_alive: TRUE
   , request_method: EBB_GET
   , query_string: ""
   , fragment: ""
@@ -94,6 +97,7 @@ const struct request_data dumbfuck =
   { raw: "GET /dumbfuck HTTP/1.1\r\n"
          "aaaaaaaaaaaaa:++++++++++\r\n"
          "\r\n"
+  , should_keep_alive: TRUE
   , request_method: EBB_GET
   , query_string: ""
   , fragment: ""
@@ -108,6 +112,7 @@ const struct request_data dumbfuck =
 const struct request_data fragment_in_uri = 
   { raw: "GET /forums/1/topics/2375?page=1#posts-17408 HTTP/1.1\r\n"
          "\r\n"
+  , should_keep_alive: TRUE
   , request_method: EBB_GET
   , query_string: "page=1"
   , fragment: "posts-17408"
@@ -123,6 +128,7 @@ const struct request_data fragment_in_uri =
 const struct request_data get_no_headers_no_body =  
   { raw: "GET /get_no_headers_no_body/world HTTP/1.1\r\n"
          "\r\n"
+  , should_keep_alive: TRUE
   , request_method: EBB_GET
   , query_string: ""
   , fragment: ""
@@ -137,6 +143,7 @@ const struct request_data get_one_header_no_body =
   { raw: "GET /get_one_header_no_body HTTP/1.1\r\n"
          "Accept: */*\r\n"
          "\r\n"
+  , should_keep_alive: TRUE
   , request_method: EBB_GET
   , query_string: ""
   , fragment: ""
@@ -150,10 +157,11 @@ const struct request_data get_one_header_no_body =
 
 // get - no headers - body "HELLO"
 const struct request_data get_funky_content_length_body_hello =  
-  { raw: "GET /get_funky_content_length_body_hello HTTP/1.1\r\n"
+  { raw: "GET /get_funky_content_length_body_hello HTTP/1.0\r\n"
          "conTENT-Length: 5\r\n"
          "\r\n"
          "HELLO"
+  , should_keep_alive: FALSE
   , request_method: EBB_GET
   , query_string: ""
   , fragment: ""
@@ -173,6 +181,7 @@ const struct request_data post_identity_body_world =
          "Content-Length: 5\r\n"
          "\r\n"
          "World"
+  , should_keep_alive: TRUE
   , request_method: EBB_POST
   , query_string: "q=search"
   , fragment: "hey"
@@ -192,6 +201,7 @@ const struct request_data post_chunked_all_your_base =
          "1e\r\nall your base are belong to us\r\n"
          "0\r\n"
          "\r\n"
+  , should_keep_alive: TRUE
   , request_method: EBB_POST
   , query_string: ""
   , fragment: ""
@@ -212,6 +222,7 @@ const struct request_data two_chunks_mult_zero_end =
          "6\r\n world\r\n"
          "000\r\n"
          "\r\n"
+  , should_keep_alive: TRUE
   , request_method: EBB_POST
   , query_string: ""
   , fragment: ""
@@ -235,6 +246,7 @@ const struct request_data chunked_w_trailing_headers =
          "Vary: *\r\n"
          "Content-Type: text/plain\r\n"
          "\r\n"
+  , should_keep_alive: TRUE
   , request_method: EBB_POST
   , query_string: ""
   , fragment: ""
@@ -255,6 +267,7 @@ const struct request_data chunked_w_bullshit_after_length =
          "6; blahblah; blah\r\n world\r\n"
          "0\r\n"
          "\r\n"
+  , should_keep_alive: TRUE
   , request_method: EBB_POST
   , query_string: ""
   , fragment: ""
@@ -288,6 +301,11 @@ int request_data_eq
   , const struct request_data *r2
   )
 { 
+  if(ebb_request_should_keep_alive(&r1->request) != r2->should_keep_alive) {
+    printf("requests disagree on keep-alive");
+    return FALSE;
+  }
+
   if(0 != strcmp(r1->body, r2->body)) {
     printf("body '%s' != '%s'\n", r1->body, r2->body);
     return FALSE;

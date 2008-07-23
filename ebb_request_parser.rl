@@ -112,15 +112,11 @@
     CURRENT->content_length += *p - '0';
   }
 
-  action use_identity_encoding {
-    //printf("use identity encoding\n");
-    CURRENT->transfer_encoding = EBB_IDENTITY;
-  }
+  action use_identity_encoding { CURRENT->transfer_encoding = EBB_IDENTITY; }
+  action use_chunked_encoding { CURRENT->transfer_encoding = EBB_CHUNKED; }
 
-  action use_chunked_encoding {
-    //printf("use chunked encoding\n");
-    CURRENT->transfer_encoding = EBB_CHUNKED;
-  }
+  action set_keep_alive { CURRENT->keep_alive = TRUE; }
+  action set_not_keep_alive { CURRENT->keep_alive = FALSE; }
 
   action multipart_boundary {
     if(CURRENT->multipart_boundary_len == EBB_MAX_MULTIPART_BOUNDARY_LEN) {
@@ -335,6 +331,11 @@
   hsep = ":" " "*;
   header = (field_name hsep field_value) :> CRLF;
   Header = ( ("Content-Length"i hsep digit+ $content_length)
+           | ("Connection"i hsep 
+               ( "Keep-Alive"i %set_keep_alive
+               | "close"i %set_not_keep_alive
+               )
+             )
            | ("Content-Type"i hsep 
               "multipart/form-data" any* 
               "boundary=" quote token+ $multipart_boundary quote
@@ -490,6 +491,7 @@ void ebb_request_init(ebb_request *request)
   request->number_of_headers = 0;
   request->transfer_encoding = EBB_IDENTITY;
   request->multipart_boundary_len = 0;
+  request->keep_alive = -1;
   request->parser = NULL;
 
   request->free = NULL;
@@ -504,3 +506,15 @@ void ebb_request_init(ebb_request *request)
   request->query_string = NULL;
 }
 
+int ebb_request_should_keep_alive(ebb_request *request)
+{
+  if(request->keep_alive == -1)
+    if(request->version_major == 1)
+      return (request->version_minor != 0);
+    else if(request->version_major == 0)
+      return FALSE;
+    else
+      return TRUE;
+  else
+    return request->keep_alive;
+}
