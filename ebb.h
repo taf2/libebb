@@ -21,9 +21,13 @@ typedef struct ebb_server     ebb_server;
 typedef struct ebb_connection ebb_connection;
 
 struct ebb_buf {
+  size_t written; /* private */
+
+  /* public */
   char *base;
   size_t len;
   void (*free)(ebb_buf*);
+  void *data;
 };
 
 struct ebb_server {
@@ -37,8 +41,7 @@ struct ebb_server {
 
   /* Public */
 
-  /* Allocates and initializes an ebb_connection.  NULL by default.
-   */
+  /* Allocates and initializes an ebb_connection.  NULL by default. */
   ebb_connection* (*new_connection) (ebb_server*, struct sockaddr_in*);
 
   void *data;
@@ -57,11 +60,11 @@ struct ebb_connection {
   float timeout;               /* ro */
   char *ip;                    /* ro */
   unsigned open:1;             /* ro */
-  ev_io read_watcher;          /* private */
+  ebb_buf *to_write;           /* ro */
   ev_io write_watcher;         /* private */
+  ev_io read_watcher;          /* private */
   ev_timer timeout_watcher;    /* private */
-  ebb_request_parser parser;  
-  
+  ebb_request_parser parser;   /* private */
   /* Public */
 
   ebb_request* (*new_request) (ebb_connection*); 
@@ -76,19 +79,13 @@ struct ebb_connection {
    */
   ebb_buf* (*new_buf) (ebb_connection*); 
 
-  /* Called when the connection is available for writing.
-   * Note that by default the write watcher is not attached to the event
-   * loop. You must call ebb_connection_enable_on_writable() if you want
-   * this callback to work. 
-   * NULL by default.
-   * Returns EBB_STOP or EBB_AGAIN.
-   */
-  int (*on_writable) (ebb_connection*); 
-
   /* Returns EBB_STOP or EBB_AGAIN 
    * NULL by default.
    */
   int (*on_timeout) (ebb_connection*); 
+
+  /* The connection was closed */
+  void (*on_close) (ebb_connection*); 
 
   /* Called when libebb will no longer use this structure. 
    * NULL by default.
@@ -98,9 +95,12 @@ struct ebb_connection {
   void *data;
 };
 
+typedef void (*ebb_connection_cb)(ebb_connection *connection, void *data);
+
 void ebb_connection_init(ebb_connection *connection, float timeout);
 void ebb_connection_close(ebb_connection *);
-void ebb_connection_enable_on_writable(ebb_connection *);
+void ebb_connection_reset_timeout(ebb_connection *connection);
+int ebb_connection_write(ebb_connection *connection, ebb_buf *buf);
 
 #define ebb_request_connection(request) ((ebb_connection*)(request->parser->data))
 

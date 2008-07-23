@@ -21,7 +21,8 @@ test_request_parser: test_request_parser.c ebb_request_parser.o
 examples: examples/hello_world
 
 examples/hello_world: examples/hello_world.c ebb.o ebb_request_parser.o
-	gcc ${GCC_OPTS} -lefence -I. -L${LIBEV}/lib -lev -I${LIBEV}/include $^ -o $@
+	gcc ${GCC_OPTS} -I. -L${LIBEV}/lib -lev -I${LIBEV}/include $^ -o $@
+	#gcc ${GCC_OPTS} -lefence -I. -L${LIBEV}/lib -lev -I${LIBEV}/include $^ -o $@
 
 .PHONY: clean test clobber
 

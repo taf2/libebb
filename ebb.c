@@ -48,7 +48,7 @@ static void on_timeout(struct ev_loop *loop, ev_timer *watcher, int revents)
    && connection->on_timeout(connection) != EBB_AGAIN
     ) 
   {
-    ev_timer_again(loop, watcher);
+    ebb_connection_reset_timeout(connection);
     return;
   }
 
@@ -57,22 +57,39 @@ static void on_timeout(struct ev_loop *loop, ev_timer *watcher, int revents)
 }
 
 /* Internal callback 
- * called by connection->wrte_watcher
+ * called by connection->write_watcher
+ * Use ebb_connection_write to send data to this
  */
 static void on_writable(struct ev_loop *loop ,ev_io *watcher, int revents)
 {
   ebb_connection *connection = watcher->data;
+  ebb_buf *buf = connection->to_write;
 
-  if(connection->on_writable) {
-    int r = connection->on_writable(connection);
-    assert(r == EBB_STOP || r == EBB_AGAIN);
-    if(EBB_STOP == r)
-      ev_io_stop(loop, watcher);
-    else
-      ev_timer_again(loop, &connection->timeout_watcher);
-  } else {
+  assert(buf != NULL);
+  assert(buf->written <= buf->len);
+
+  /* TODO use writev */
+  ssize_t sent = write( connection->fd
+                      , buf->base + buf->written
+                      , buf->len - buf->written
+                      );
+  if(sent < 0) goto error;
+  if(sent == 0) return;
+
+  ebb_connection_reset_timeout(connection);
+
+  buf->written += sent;
+
+  if(buf->written == buf->len) {
     ev_io_stop(loop, watcher);
+    connection->to_write = NULL;
+    if(buf->free)
+      buf->free(buf);
   }
+  return;
+error:
+  error(0, 0, "close connection on write.\n");
+  ebb_connection_close(connection);
   FREE_CONNECTION_IF_CLOSED 
 }
 
@@ -83,7 +100,7 @@ static void on_writable(struct ev_loop *loop ,ev_io *watcher, int revents)
 static void on_readable(struct ev_loop *loop, ev_io *watcher, int revents)
 {
   ebb_connection *connection = watcher->data;
-  
+
   if(EV_ERROR & revents) {
     error(0, 0, "on_readable() got error event, closing connection.\n");
     goto error;
@@ -94,25 +111,16 @@ static void on_readable(struct ev_loop *loop, ev_io *watcher, int revents)
     buf = connection->new_buf(connection);
   if(buf == NULL) goto error; 
 
-  ssize_t read = recv( connection->fd
-                     , buf->base
-                     , buf->len
-                     , 0
-                     );
-  if(read < 0) goto error;
-  /* XXX is this the right action to take for read==0 ? */
-  if(read == 0) goto error; 
+  ssize_t recved = read(connection->fd, buf->base, buf->len);
 
-  ev_timer_again(loop, &connection->timeout_watcher);
+  if(recved < 0) goto error;
+  if(recved == 0) return; /* XXX is this the right action to take ? */
 
-  ebb_request_parser_execute( &connection->parser
-                            , buf->base
-                            , read
-                            );
+  ebb_connection_reset_timeout(connection);
 
+  ebb_request_parser_execute(&connection->parser, buf->base, recved);
   /* parse error? just drop the client. screw the 400 response */
   if(ebb_request_parser_has_error(&connection->parser)) goto error;
-
 
   if(buf->free)
     buf->free(buf);
@@ -227,8 +235,8 @@ int ebb_server_listen_on_port(ebb_server *server, const int port)
   setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, (void *)&flags, sizeof(flags));
   setsockopt(fd, SOL_SOCKET, SO_LINGER, (void *)&ling, sizeof(ling));
 
-  /* TODO: Sending single byte messages in a response?  Perhaps need to
-   * enable the Nagel algorithm dynamically For now disabling.
+  /* TODO: Sending single byte chunks in a response body? Perhaps there is
+   * a need to enable the Nagel algorithm dynamically. For now disabling.
    */
   setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (void *)&flags, sizeof(flags));
   
@@ -292,19 +300,14 @@ void ebb_server_init(ebb_server *server, struct ev_loop *loop)
   server->data = NULL;
 }
 
-static void default_buf_free(ebb_buf *buf)
-{
-  free(buf->base);
-  free(buf);
-}
-
 static ebb_buf* default_new_buf(ebb_connection *connection)
 {
-  ebb_buf *buf = malloc(sizeof(ebb_buf));
-  buf->base = malloc(4*1024);
-  buf->len = 4*1024;
-  buf->free = default_buf_free;
-  return buf;
+  static ebb_buf buf;
+  static char base[TCP_MAXWIN];
+  buf.base = base;
+  buf.len = TCP_MAXWIN;
+  buf.free = NULL;
+  return &buf;
 }
 
 static ebb_request* new_request_wrapper(void *data)
@@ -341,17 +344,18 @@ void ebb_connection_init(ebb_connection *connection, float timeout)
   
   connection->write_watcher.data = connection;
   ev_init (&connection->write_watcher, on_writable);
+  connection->to_write = NULL;
 
   connection->read_watcher.data = connection;
   ev_init(&connection->read_watcher, on_readable);
 
   connection->timeout_watcher.data = connection;  
-  ev_timer_init(&connection->timeout_watcher, on_timeout, timeout, 0);
+  ev_timer_init(&connection->timeout_watcher, on_timeout, timeout, timeout);
 
   connection->new_buf = default_new_buf;
   connection->new_request = NULL;
   connection->on_timeout = NULL;
-  connection->on_writable = NULL;
+  connection->on_close = NULL;
   connection->free = NULL;
   connection->data = NULL;
 }
@@ -362,17 +366,45 @@ void ebb_connection_close(ebb_connection *connection)
     ev_io_stop(connection->server->loop, &connection->read_watcher);
     ev_io_stop(connection->server->loop, &connection->write_watcher);
     ev_timer_stop(connection->server->loop, &connection->timeout_watcher);
-    close(connection->fd);
+
+    int r =  close(connection->fd);
+    assert(r == 0);
+    
     connection->open = FALSE;
+
+    if(connection->on_close)
+      connection->on_close(connection);
   }
 }
 
-/** Enables connection->on_writable callback
- * It will be called when the socket is okay to write to.  Stop the callback
- * by returning EBB_STOP from connection->on_writable.
+/* 
+ * Resets the timeout to stay alive for another connection->timeout seconds
  */
-void ebb_connection_enable_on_writable(ebb_connection *connection)
+void ebb_connection_reset_timeout(ebb_connection *connection)
 {
-  ev_io_start(connection->server->loop, &connection->write_watcher);
+  ev_timer_again( connection->server->loop
+                , &connection->timeout_watcher
+                );
 }
 
+/**
+ * Writes a string to the socket. This is actually sets a watcher
+ * which may take multiple iterations to write the entire string.
+ *
+ * The buf->free() callback will be made when the operation is complete.
+ *
+ * This can only be called once at a time. If you call it again
+ * while the connection is writing another buffer the ebb_connection_write
+ * will return FALSE and ignore the request.
+ */
+int ebb_connection_write(ebb_connection *connection, ebb_buf *buf)
+{
+  if(ev_is_active(&connection->write_watcher))
+    return FALSE;
+  assert(connection->to_write == NULL);
+  assert(buf->len > 0);
+  buf->written = 0;
+  connection->to_write = buf;
+  ev_io_start(connection->server->loop, &connection->write_watcher);
+  return TRUE;
+}
