@@ -41,6 +41,18 @@ static void set_nonblock (int fd)
   assert(0 <= r && "Setting socket non-block failed!");
 }
 
+static ssize_t push(void *data, const void *buf, size_t len)
+{
+  ebb_connection *connection = data;
+  return send(connection->fd, buf, len, MSG_NOSIGNAL);
+}
+
+static ssize_t pull(void *data, void *buf, size_t len)
+{
+  ebb_connection *connection = data;
+  return recv(connection->fd, buf, len, 0);
+}
+
 /* Internal callback 
  * called by connection->timeout_watcher
  */
@@ -48,8 +60,7 @@ static void on_timeout(struct ev_loop *loop, ev_timer *watcher, int revents)
 {
   ebb_connection *connection = watcher->data;
 
-
-  printf("on_timeout\n");
+  //printf("on_timeout\n");
 
   /* if on_timeout returns true, we don't time out */
   if( connection->on_timeout 
@@ -68,8 +79,9 @@ static void on_handshake(struct ev_loop *loop ,ev_io *watcher, int revents)
 {
   ebb_connection *connection = watcher->data;
 
-  printf("on_handshake\n");
+  //printf("on_handshake\n");
 
+  assert(ev_is_active(&connection->timeout_watcher));
   assert(!ev_is_active(&connection->read_watcher));
   assert(!ev_is_active(&connection->write_watcher));
 
@@ -82,7 +94,6 @@ static void on_handshake(struct ev_loop *loop ,ev_io *watcher, int revents)
   if(r < 0) {
     if(gnutls_error_is_fatal(r)) goto error;
     if(r == GNUTLS_E_INTERRUPTED || r == GNUTLS_E_AGAIN)
-      ebb_connection_reset_timeout(connection);
       ev_io_set( watcher
                , connection->fd
                , EV_ERROR | (GNUTLS_NEED_WRITE ? EV_WRITE : EV_READ)
@@ -111,24 +122,31 @@ static void on_writable(struct ev_loop *loop ,ev_io *watcher, int revents)
 {
   ebb_connection *connection = watcher->data;
   ebb_buf *buf = connection->to_write;
-
-  printf("on_writable\n");
+  ssize_t sent;
+  
+  //printf("on_writable\n");
 
   assert(buf != NULL);
   assert(buf->written <= buf->len);
+  assert(ev_is_active(&connection->timeout_watcher));
   assert(!ev_is_active(&connection->handshake_watcher));
 
-  /* TODO use writev */
-  ssize_t sent = gnutls_record_send( connection->session
-                                   , buf->base + buf->written
-                                   , buf->len - buf->written
-                                   ); 
-  if(sent <= 0) {
-    if(gnutls_error_is_fatal(sent)) goto error;
-    if( (sent == GNUTLS_E_INTERRUPTED || sent == GNUTLS_E_AGAIN)
-     && GNUTLS_NEED_READ
-      ) ev_io_stop(loop, watcher);
-    return; 
+  if(connection->server->secure) {
+    sent = gnutls_record_send( connection->session
+                             , buf->base + buf->written
+                             , buf->len - buf->written
+                             ); 
+    if(sent <= 0) {
+      if(gnutls_error_is_fatal(sent)) goto error;
+      if( (sent == GNUTLS_E_INTERRUPTED || sent == GNUTLS_E_AGAIN)
+       && GNUTLS_NEED_READ
+        ) ev_io_stop(loop, watcher);
+      return; 
+    }
+  } else {
+    sent = push(connection, buf->base + buf->written, buf->len - buf->written);
+    if(sent < 0) goto error;
+    if(sent == 0) return;
   }
 
   ebb_connection_reset_timeout(connection);
@@ -155,9 +173,11 @@ error:
 static void on_readable(struct ev_loop *loop, ev_io *watcher, int revents)
 {
   ebb_connection *connection = watcher->data;
+  ssize_t recved;
 
-  printf("on_readable\n");
+  //printf("on_readable\n");
 
+  assert(ev_is_active(&connection->timeout_watcher));
   assert(!ev_is_active(&connection->handshake_watcher));
 
   if(EV_ERROR & revents) {
@@ -170,18 +190,23 @@ static void on_readable(struct ev_loop *loop, ev_io *watcher, int revents)
     buf = connection->new_buf(connection);
   if(buf == NULL) goto error; 
 
-  ssize_t recved = gnutls_record_recv( connection->session
-                                     , buf->base
-                                     , buf->len
-                                     );
-
-  if(recved <= 0) {
-    if(gnutls_error_is_fatal(recved)) goto error;
-    if( (recved == GNUTLS_E_INTERRUPTED || recved == GNUTLS_E_AGAIN)
-     && GNUTLS_NEED_WRITE
-      ) ev_io_start(loop, &connection->write_watcher);
-    return; 
-  } 
+  if(connection->server->secure) {
+    recved = gnutls_record_recv( connection->session
+                               , buf->base
+                               , buf->len
+                               );
+    if(recved <= 0) {
+      if(gnutls_error_is_fatal(recved)) goto error;
+      if( (recved == GNUTLS_E_INTERRUPTED || recved == GNUTLS_E_AGAIN)
+       && GNUTLS_NEED_WRITE
+        ) ev_io_start(loop, &connection->write_watcher);
+      return; 
+    } 
+  } else {
+    recved = push(connection, buf->base, buf->len);
+    if(recved < 0) goto error;
+    if(recved == 0) return;
+  }
 
   ebb_connection_reset_timeout(connection);
 
@@ -194,6 +219,7 @@ static void on_readable(struct ev_loop *loop, ev_io *watcher, int revents)
 
   FREE_CONNECTION_IF_CLOSED 
   return;
+
 error:
   ebb_connection_close(connection);
   FREE_CONNECTION_IF_CLOSED 
@@ -206,6 +232,8 @@ error:
 static void on_connection(struct ev_loop *loop, ev_io *watcher, int revents)
 {
   ebb_server *server = watcher->data;
+
+  //printf("on connection!\n");
 
   assert(server->listening);
   assert(server->loop == loop);
@@ -241,22 +269,23 @@ static void on_connection(struct ev_loop *loop, ev_io *watcher, int revents)
   connection->fd = fd;
   connection->open = TRUE;
   connection->server = server;
+  memcpy(&connection->sockaddr, &addr, addr_len);
+  if(server->port[0] != '\0')
+    connection->ip = inet_ntoa(connection->sockaddr.sin_addr);  
 
   if(server->secure) {
     gnutls_init(&connection->session, GNUTLS_SERVER);
     gnutls_transport_set_lowat(connection->session, 0); 
-    gnutls_transport_set_ptr(connection->session, (gnutls_transport_ptr) fd); 
     gnutls_set_default_priority(connection->session);
     gnutls_credentials_set(connection->session, GNUTLS_CRD_CERTIFICATE, connection->server->credentials);
+
+    gnutls_transport_set_ptr(connection->session, (gnutls_transport_ptr) connection); 
+    gnutls_transport_set_push_function(connection->session, push);
+    gnutls_transport_set_pull_function(connection->session, pull);
   }
 
-  memcpy(&connection->sockaddr, &addr, addr_len);
-
-  if(server->port[0] != '\0')
-    connection->ip = inet_ntoa(connection->sockaddr.sin_addr);  
-
+  ev_io_set(&connection->handshake_watcher, connection->fd, EV_READ | EV_WRITE | EV_ERROR);
   /* Note: not starting the write watcher until there is data to be written */
-  ev_io_set(&connection->handshake_watcher, connection->fd, EV_WRITE | EV_READ | EV_ERROR);
   ev_io_set(&connection->write_watcher, connection->fd, EV_WRITE);
   ev_io_set(&connection->read_watcher, connection->fd, EV_READ | EV_ERROR);
   /* XXX: seperate error watcher? */
@@ -478,14 +507,17 @@ void ebb_connection_close(ebb_connection *connection)
   if(connection->open) {
     ev_io_stop(connection->server->loop, &connection->read_watcher);
     ev_io_stop(connection->server->loop, &connection->write_watcher);
+    ev_io_stop(connection->server->loop, &connection->handshake_watcher);
     ev_timer_stop(connection->server->loop, &connection->timeout_watcher);
 
+    if(connection->session) {
+      gnutls_deinit(connection->session);
+    }
     int r =  close(connection->fd);
     assert(r == 0);
     
     connection->open = FALSE;
 
-    gnutls_deinit(connection->session);
 
     if(connection->on_close)
       connection->on_close(connection);
