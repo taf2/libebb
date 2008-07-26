@@ -95,7 +95,8 @@ int main()
   struct ev_loop *loop = ev_default_loop(0);
   ebb_server server;
 
-  ebb_server_init(&server, loop);
+  //ebb_server_init(&server, loop);
+  ebb_secure_server_init(&server, loop, "examples/ca-cert.pem", "examples/ca-key.pem");
   server.new_connection = new_connection;
 
   printf("hello_world listening on port 5000\n");

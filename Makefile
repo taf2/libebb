@@ -1,4 +1,6 @@
 LIBEV = ${HOME}/local/libev
+CFLAGS = -g -Wall -fPIC -I${LIBEV}/include `pkg-config --cflags gnutls`
+LIBS = -L${LIBEV}/lib -lev `pkg-config --libs gnutls`
 GCC_OPTS  = -fPIC -g -Wall 
 
 #libebb.so.0.0.1: objects
@@ -7,22 +9,21 @@ GCC_OPTS  = -fPIC -g -Wall
 objects: ebb.o ebb_request_parser.o 
 
 ebb.o: ebb.c ebb.h
-	gcc -fPIC -I${LIBEV}/include -c $< -o $@ -g -Wall
+	gcc ${CFLAGS} -c $< -o $@
 
 ebb_request_parser.o: ebb_request_parser.c ebb_request_parser.h
-	gcc ${GCC_OPTS} -c $< -o $@ 
+	gcc ${CFLAGS} -c $< -o $@
 
 ebb_request_parser.c: ebb_request_parser.rl
 	ragel -s -G2 $< -o $@
 
 test_request_parser: test_request_parser.c ebb_request_parser.o
-	gcc ${GCC_OPTS} -lefence  $^ -o $@
+	gcc ${CFLAGS} -lefence  $^ -o $@
 
 examples: examples/hello_world
 
 examples/hello_world: examples/hello_world.c ebb.o ebb_request_parser.o
-	gcc ${GCC_OPTS} -I. -L${LIBEV}/lib -lev -I${LIBEV}/include $^ -o $@
-	#gcc ${GCC_OPTS} -lefence -I. -L${LIBEV}/lib -lev -I${LIBEV}/include $^ -o $@
+	gcc ${CFLAGS} ${LIBS} -lefence $^ -o $@
 
 .PHONY: clean test clobber
 

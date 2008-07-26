@@ -19,6 +19,7 @@
 #include <stdlib.h> /* for the default methods */
 
 #include <ev.h>
+#include <gnutls/gnutls.h>
 
 #include "ebb.h"
 #include "ebb_request_parser.h"
@@ -28,6 +29,10 @@
 
 #define FREE_CONNECTION_IF_CLOSED \
   if(!connection->open && connection->free) connection->free(connection);
+
+#define GNUTLS_NEED_WRITE (gnutls_record_get_direction(connection->session) == 1)
+#define GNUTLS_NEED_READ (gnutls_record_get_direction(connection->session) == 0)
+#define CONNECTION_HAS_SOMETHING_TO_WRITE (connection->to_write != NULL)
 
 static void set_nonblock (int fd)
 {
@@ -43,6 +48,9 @@ static void on_timeout(struct ev_loop *loop, ev_timer *watcher, int revents)
 {
   ebb_connection *connection = watcher->data;
 
+
+  printf("on_timeout\n");
+
   /* if on_timeout returns true, we don't time out */
   if( connection->on_timeout 
    && connection->on_timeout(connection) != EBB_AGAIN
@@ -56,6 +64,45 @@ static void on_timeout(struct ev_loop *loop, ev_timer *watcher, int revents)
   FREE_CONNECTION_IF_CLOSED 
 }
 
+static void on_handshake(struct ev_loop *loop ,ev_io *watcher, int revents)
+{
+  ebb_connection *connection = watcher->data;
+
+  printf("on_handshake\n");
+
+  assert(!ev_is_active(&connection->read_watcher));
+  assert(!ev_is_active(&connection->write_watcher));
+
+  if(EV_ERROR & revents) {
+    error(0, 0, "on_handshake() got error event, closing connection.\n");
+    goto error;
+  }
+
+  int r = gnutls_handshake(connection->session);
+  if(r < 0) {
+    if(gnutls_error_is_fatal(r)) goto error;
+    if(r == GNUTLS_E_INTERRUPTED || r == GNUTLS_E_AGAIN)
+      ebb_connection_reset_timeout(connection);
+      ev_io_set( watcher
+               , connection->fd
+               , EV_ERROR | (GNUTLS_NEED_WRITE ? EV_WRITE : EV_READ)
+               );
+    return;
+  }
+
+  ebb_connection_reset_timeout(connection);
+  ev_io_stop(loop, watcher);
+
+  ev_io_start(loop, &connection->read_watcher);
+  if(CONNECTION_HAS_SOMETHING_TO_WRITE)
+    ev_io_start(loop, &connection->write_watcher);
+
+  return;
+error:
+  ebb_connection_close(connection);
+  FREE_CONNECTION_IF_CLOSED 
+}
+
 /* Internal callback 
  * called by connection->write_watcher
  * Use ebb_connection_write to send data to this
@@ -65,16 +112,24 @@ static void on_writable(struct ev_loop *loop ,ev_io *watcher, int revents)
   ebb_connection *connection = watcher->data;
   ebb_buf *buf = connection->to_write;
 
+  printf("on_writable\n");
+
   assert(buf != NULL);
   assert(buf->written <= buf->len);
+  assert(!ev_is_active(&connection->handshake_watcher));
 
   /* TODO use writev */
-  ssize_t sent = write( connection->fd
-                      , buf->base + buf->written
-                      , buf->len - buf->written
-                      );
-  if(sent < 0) goto error;
-  if(sent == 0) return;
+  ssize_t sent = gnutls_record_send( connection->session
+                                   , buf->base + buf->written
+                                   , buf->len - buf->written
+                                   ); 
+  if(sent <= 0) {
+    if(gnutls_error_is_fatal(sent)) goto error;
+    if( (sent == GNUTLS_E_INTERRUPTED || sent == GNUTLS_E_AGAIN)
+     && GNUTLS_NEED_READ
+      ) ev_io_stop(loop, watcher);
+    return; 
+  }
 
   ebb_connection_reset_timeout(connection);
 
@@ -101,6 +156,10 @@ static void on_readable(struct ev_loop *loop, ev_io *watcher, int revents)
 {
   ebb_connection *connection = watcher->data;
 
+  printf("on_readable\n");
+
+  assert(!ev_is_active(&connection->handshake_watcher));
+
   if(EV_ERROR & revents) {
     error(0, 0, "on_readable() got error event, closing connection.\n");
     goto error;
@@ -111,10 +170,18 @@ static void on_readable(struct ev_loop *loop, ev_io *watcher, int revents)
     buf = connection->new_buf(connection);
   if(buf == NULL) goto error; 
 
-  ssize_t recved = read(connection->fd, buf->base, buf->len);
+  ssize_t recved = gnutls_record_recv( connection->session
+                                     , buf->base
+                                     , buf->len
+                                     );
 
-  if(recved < 0) goto error;
-  if(recved == 0) return; /* XXX is this the right action to take ? */
+  if(recved <= 0) {
+    if(gnutls_error_is_fatal(recved)) goto error;
+    if( (recved == GNUTLS_E_INTERRUPTED || recved == GNUTLS_E_AGAIN)
+     && GNUTLS_NEED_WRITE
+      ) ev_io_start(loop, &connection->write_watcher);
+    return; 
+  } 
 
   ebb_connection_reset_timeout(connection);
 
@@ -175,17 +242,29 @@ static void on_connection(struct ev_loop *loop, ev_io *watcher, int revents)
   connection->open = TRUE;
   connection->server = server;
 
+  if(server->secure) {
+    gnutls_init(&connection->session, GNUTLS_SERVER);
+    gnutls_transport_set_lowat(connection->session, 0); 
+    gnutls_transport_set_ptr(connection->session, (gnutls_transport_ptr) fd); 
+    gnutls_set_default_priority(connection->session);
+    gnutls_credentials_set(connection->session, GNUTLS_CRD_CERTIFICATE, connection->server->credentials);
+  }
+
   memcpy(&connection->sockaddr, &addr, addr_len);
 
   if(server->port[0] != '\0')
     connection->ip = inet_ntoa(connection->sockaddr.sin_addr);  
 
   /* Note: not starting the write watcher until there is data to be written */
+  ev_io_set(&connection->handshake_watcher, connection->fd, EV_WRITE | EV_READ | EV_ERROR);
   ev_io_set(&connection->write_watcher, connection->fd, EV_WRITE);
   ev_io_set(&connection->read_watcher, connection->fd, EV_READ | EV_ERROR);
   /* XXX: seperate error watcher? */
 
-  ev_io_start(loop, &connection->read_watcher);
+  if(server->secure)
+    ev_io_start(loop, &connection->handshake_watcher);
+  else
+    ev_io_start(loop, &connection->read_watcher);
   ev_timer_start(loop, &connection->timeout_watcher);
 }
 
@@ -295,9 +374,38 @@ void ebb_server_init(ebb_server *server, struct ev_loop *loop)
   server->fd = -1;
   server->connection_watcher.data = server;
   ev_init (&server->connection_watcher, on_connection);
+  server->secure = FALSE;
 
   server->new_connection = NULL;
   server->data = NULL;
+}
+
+/* similar to server_init. 
+ *
+ * the user of secure server might want to set additional callbacks from
+ * GNUTLS. In particular 
+ * gnutls_global_set_mem_functions() 
+ * gnutls_global_set_log_function()
+ *
+ * cert_file: the filename of a PEM certificate file
+ *
+ * key_file: the filename of a private key. Currently only PKCS-1 encoded
+ * RSA and DSA private keys are accepted. 
+ */
+void ebb_secure_server_init(ebb_server *server, struct ev_loop *loop, 
+                            const char *cert_file, const char *key_file)
+{
+  ebb_server_init(server, loop);
+  server->secure = TRUE;
+  gnutls_global_init();
+  gnutls_certificate_allocate_credentials(&server->credentials);
+  /* todo gnutls_certificate_free_credentials */
+  int r = gnutls_certificate_set_x509_key_file( server->credentials
+                                              , cert_file
+                                              , key_file
+                                              , GNUTLS_X509_FMT_PEM
+                                              );
+  assert(r >= 0 && "error loading certificates");
 }
 
 static ebb_buf* default_new_buf(ebb_connection *connection)
@@ -349,8 +457,13 @@ void ebb_connection_init(ebb_connection *connection, float timeout)
   connection->read_watcher.data = connection;
   ev_init(&connection->read_watcher, on_readable);
 
+  connection->handshake_watcher.data = connection;
+  ev_init(&connection->handshake_watcher, on_handshake);
+
   connection->timeout_watcher.data = connection;  
   ev_timer_init(&connection->timeout_watcher, on_timeout, timeout, timeout);
+
+  connection->session = NULL;
 
   connection->new_buf = default_new_buf;
   connection->new_request = NULL;
@@ -372,8 +485,11 @@ void ebb_connection_close(ebb_connection *connection)
     
     connection->open = FALSE;
 
+    gnutls_deinit(connection->session);
+
     if(connection->on_close)
       connection->on_close(connection);
+
   }
 }
 
@@ -401,7 +517,7 @@ int ebb_connection_write(ebb_connection *connection, ebb_buf *buf)
 {
   if(ev_is_active(&connection->write_watcher))
     return FALSE;
-  assert(connection->to_write == NULL);
+  assert(!CONNECTION_HAS_SOMETHING_TO_WRITE);
   assert(buf->len > 0);
   buf->written = 0;
   connection->to_write = buf;

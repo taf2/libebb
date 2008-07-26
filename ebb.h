@@ -9,6 +9,7 @@
 
 #include "ebb_request_parser.h"
 #include <ev.h>
+#include <gnutls/gnutls.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #define EBB_MAX_CONNECTIONS 1024
@@ -31,13 +32,15 @@ struct ebb_buf {
 };
 
 struct ebb_server {
-  int fd;                      /* ro */
-  struct sockaddr_in sockaddr; /* ro */
-  socklen_t socklen;           /* ro */
-  char port[6];                /* ro */
-  struct ev_loop *loop;        /* ro */
-  ev_io connection_watcher;    /* private */
-  unsigned listening:1;        /* ro */
+  int fd;                                       /* ro */
+  struct sockaddr_in sockaddr;                  /* ro */
+  socklen_t socklen;                            /* ro */
+  char port[6];                                 /* ro */
+  struct ev_loop *loop;                         /* ro */
+  unsigned listening:1;                         /* ro */
+  unsigned secure:1;                            /* ro */
+  gnutls_certificate_credentials_t credentials; /* private */
+  ev_io connection_watcher;                     /* private */
 
   /* Public */
 
@@ -48,6 +51,8 @@ struct ebb_server {
 };
 
 void ebb_server_init( ebb_server *server, struct ev_loop *loop);
+void ebb_secure_server_init(ebb_server *server, struct ev_loop *loop, 
+                            const char *cert_file, const char *key_file);
 int ebb_server_listen_on_port(ebb_server *server, const int port);
 int ebb_server_listen_on_fd(ebb_server *server, const int sfd);
 void ebb_server_unlisten(ebb_server *server);
@@ -63,8 +68,11 @@ struct ebb_connection {
   ebb_buf *to_write;           /* ro */
   ev_io write_watcher;         /* private */
   ev_io read_watcher;          /* private */
+  ev_io handshake_watcher;     /* private */
   ev_timer timeout_watcher;    /* private */
   ebb_request_parser parser;   /* private */
+
+  gnutls_session_t session;    /* private */
   /* Public */
 
   ebb_request* (*new_request) (ebb_connection*); 
