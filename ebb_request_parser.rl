@@ -11,8 +11,6 @@
 
 #include <stdio.h>
 #include <assert.h>
-#include <string.h>
-#include <stdlib.h> /* for the default methods */
 
 #define TRUE 1
 #define FALSE 0

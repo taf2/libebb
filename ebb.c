@@ -22,10 +22,12 @@
 #include <gnutls/gnutls.h>
 
 #include "ebb.h"
+#include "rbtree.h"
 #include "ebb_request_parser.h"
 
 #define TRUE 1
 #define FALSE 0
+#define MIN(a,b) (a < b ? a : b)
 
 #define FREE_CONNECTION_IF_CLOSED \
   if(!connection->open && connection->free) connection->free(connection);
@@ -33,6 +35,108 @@
 #define GNUTLS_NEED_WRITE (gnutls_record_get_direction(connection->session) == 1)
 #define GNUTLS_NEED_READ (gnutls_record_get_direction(connection->session) == 0)
 #define CONNECTION_HAS_SOMETHING_TO_WRITE (connection->to_write != NULL)
+
+
+#define EBB_MAX_SESSION_ID_SIZE 32
+#define EBB_MAX_SESSION_DATA_SIZE 512
+
+struct session_cache {
+  struct rbtree_node_t node;
+
+  gnutls_datum_t key;
+  gnutls_datum_t value;
+
+  char key_storage[EBB_MAX_SESSION_ID_SIZE];
+  char value_storage[EBB_MAX_SESSION_DATA_SIZE];
+};
+
+static int session_cache_compare (void *left, void *right) {
+  gnutls_datum_t *left_key = left;
+  gnutls_datum_t *right_key = right;
+  if(left_key->size < right_key->size)
+    return -1;
+  else if(left_key->size > right_key->size)
+    return 1;
+  else
+    return memcmp( left_key->data
+                 , right_key->data
+                 , MIN(left_key->size, right_key->size)
+                 );
+}
+
+static int
+session_cache_store(void *data, gnutls_datum_t key, gnutls_datum_t value)
+{
+  rbtree tree = data;
+
+  if( tree == NULL
+   || key.size > EBB_MAX_SESSION_ID_SIZE
+   || value.size > EBB_MAX_SESSION_DATA_SIZE
+    ) return -1;
+
+  struct session_cache *cache = gnutls_malloc(sizeof(struct session_cache));
+
+  memcpy (cache->key_storage, key.data, key.size);
+  cache->key.size = key.size;
+  cache->key.data = (void*)cache->key_storage;
+
+  memcpy (cache->value_storage, value.data, value.size);
+  cache->value.size = value.size;
+  cache->value.data = (void*)cache->value_storage;
+
+  cache->node.key = &cache->key;
+  cache->node.value = &cache;
+
+  rbtree_insert(tree, (rbtree_node)cache);
+
+  //printf("session_cache_store\n");
+
+  return 0;
+}
+
+static gnutls_datum_t
+session_cache_retrieve (void *data, gnutls_datum_t key)
+{
+  rbtree tree = data;
+  gnutls_datum_t res = { NULL, 0 };
+  struct session_cache *cache = rbtree_lookup(tree, &key);
+
+  if(cache == NULL)
+    return res;
+
+  res.size = cache->value.size;
+  res.data = gnutls_malloc (res.size);
+  if(res.data == NULL)
+    return res;
+
+  memcpy(res.data, cache->value.data, res.size);
+
+  //printf("session_cache_retrieve\n");
+
+  return res;
+}
+
+static int
+session_cache_remove (void *data, gnutls_datum_t key)
+{
+  rbtree tree = data;
+
+  if(tree == NULL)
+    return -1;
+
+  struct session_cache *cache = (struct session_cache *)rbtree_delete(tree, &key);
+  if(cache == NULL)
+    return -1;
+
+  gnutls_free(cache);
+
+  //printf("session_cache_remove\n");
+
+  return 0;
+}
+
+
+
 
 static void set_nonblock (int fd)
 {
@@ -282,6 +386,11 @@ static void on_connection(struct ev_loop *loop, ev_io *watcher, int revents)
     gnutls_transport_set_ptr(connection->session, (gnutls_transport_ptr) connection); 
     gnutls_transport_set_push_function(connection->session, push);
     gnutls_transport_set_pull_function(connection->session, pull);
+
+    gnutls_db_set_ptr (connection->session, &server->session_cache);
+    gnutls_db_set_store_function (connection->session, session_cache_store);
+    gnutls_db_set_retrieve_function (connection->session, session_cache_retrieve);
+    gnutls_db_set_remove_function (connection->session, session_cache_remove);
   }
 
   ev_io_set(&connection->handshake_watcher, connection->fd, EV_READ | EV_WRITE | EV_ERROR);
@@ -415,6 +524,8 @@ void ebb_server_init(ebb_server *server, struct ev_loop *loop)
  * GNUTLS. In particular 
  * gnutls_global_set_mem_functions() 
  * gnutls_global_set_log_function()
+ * Also see the note above ebb_connection_init() about setting gnutls cache
+ * access functions
  *
  * cert_file: the filename of a PEM certificate file
  *
@@ -435,6 +546,9 @@ void ebb_secure_server_init(ebb_server *server, struct ev_loop *loop,
                                               , GNUTLS_X509_FMT_PEM
                                               );
   assert(r >= 0 && "error loading certificates");
+
+
+  rbtree_init(&server->session_cache, session_cache_compare);
 }
 
 static ebb_buf* default_new_buf(ebb_connection *connection)
@@ -463,6 +577,14 @@ static ebb_request* new_request_wrapper(void *data)
  * This should be called immediately after allocating space for a new
  * ebb_connection structure. Most likely, this will only be called within
  * the ebb_server->new_connection callback which you supply. 
+ *
+ * If using SSL do consider setting
+ *   gnutls_db_set_retrieve_function (connection->session, _);
+ *   gnutls_db_set_remove_function (connection->session, _);
+ *   gnutls_db_set_store_function (connection->session, _);
+ *   gnutls_db_set_ptr (connection->session, _);
+ * To provide a better means of storing SSL session caches. libebb provides
+ * only a simple default implementation. 
  *
  * @param connection the connection to initialize
  * @param timeout    the timeout in seconds

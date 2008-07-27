@@ -8,6 +8,7 @@
 #define server_h
 
 #include "ebb_request_parser.h"
+#include "rbtree.h"
 #include <ev.h>
 #include <gnutls/gnutls.h>
 #include <sys/socket.h>
@@ -40,6 +41,7 @@ struct ebb_server {
   unsigned listening:1;                         /* ro */
   unsigned secure:1;                            /* ro */
   gnutls_certificate_credentials_t credentials; /* private */
+  struct rbtree_t session_cache;                /* private */
   ev_io connection_watcher;                     /* private */
 
   /* Public */
