@@ -7,12 +7,16 @@
 #ifndef server_h
 #define server_h
 
-#include "ebb_request_parser.h"
-#include "rbtree.h"
-#include <ev.h>
-#include <gnutls/gnutls.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include "ebb_request_parser.h"
+#include <ev.h>
+
+#ifdef HAVE_GNUTLS
+#  include <gnutls/gnutls.h>
+#  include "rbtree.h" /* for ebb_server.session_cache */
+#endif
+
 #define EBB_MAX_CONNECTIONS 1024
 
 #define EBB_AGAIN 0
@@ -40,8 +44,10 @@ struct ebb_server {
   struct ev_loop *loop;                         /* ro */
   unsigned listening:1;                         /* ro */
   unsigned secure:1;                            /* ro */
+#ifdef HAVE_GNUTLS
   gnutls_certificate_credentials_t credentials; /* private */
   struct rbtree_t session_cache;                /* private */
+#endif
   ev_io connection_watcher;                     /* private */
 
   /* Public */
@@ -68,13 +74,15 @@ struct ebb_connection {
   char *ip;                    /* ro */
   unsigned open:1;             /* ro */
   ebb_buf *to_write;           /* ro */
+  ebb_request_parser parser;   /* private */
   ev_io write_watcher;         /* private */
   ev_io read_watcher;          /* private */
-  ev_io handshake_watcher;     /* private */
   ev_timer timeout_watcher;    /* private */
-  ebb_request_parser parser;   /* private */
-
+#ifdef HAVE_GNUTLS
+  ev_io handshake_watcher;     /* private */
   gnutls_session_t session;    /* private */
+#endif 
+
   /* Public */
 
   ebb_request* (*new_request) (ebb_connection*); 

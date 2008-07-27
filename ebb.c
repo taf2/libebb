@@ -19,10 +19,13 @@
 #include <stdlib.h> /* for the default methods */
 
 #include <ev.h>
-#include <gnutls/gnutls.h>
+
+#ifdef HAVE_GNUTLS
+#  include <gnutls/gnutls.h>
+#  include "rbtree.h" /* for session_cache */
+#endif
 
 #include "ebb.h"
-#include "rbtree.h"
 #include "ebb_request_parser.h"
 
 #define TRUE 1
@@ -31,14 +34,27 @@
 
 #define FREE_CONNECTION_IF_CLOSED \
   if(!connection->open && connection->free) connection->free(connection);
-
-#define GNUTLS_NEED_WRITE (gnutls_record_get_direction(connection->session) == 1)
-#define GNUTLS_NEED_READ (gnutls_record_get_direction(connection->session) == 0)
 #define CONNECTION_HAS_SOMETHING_TO_WRITE (connection->to_write != NULL)
 
+static void set_nonblock (int fd)
+{
+  int flags = fcntl(fd, F_GETFL, 0);
+  int r = fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+  assert(0 <= r && "Setting socket non-block failed!");
+}
 
-#define EBB_MAX_SESSION_ID_SIZE 32
-#define EBB_MAX_SESSION_DATA_SIZE 512
+static ssize_t nosigpipe_push(void *data, const void *buf, size_t len)
+{
+  int fd = (int)data;
+  return send(fd, buf, len, MSG_NOSIGNAL);
+}
+
+#ifdef HAVE_GNUTLS
+#define GNUTLS_NEED_WRITE (gnutls_record_get_direction(connection->session) == 1)
+#define GNUTLS_NEED_READ (gnutls_record_get_direction(connection->session) == 0)
+
+#define EBB_MAX_SESSION_KEY 32
+#define EBB_MAX_SESSION_VALUE 512
 
 struct session_cache {
   struct rbtree_node_t node;
@@ -46,8 +62,8 @@ struct session_cache {
   gnutls_datum_t key;
   gnutls_datum_t value;
 
-  char key_storage[EBB_MAX_SESSION_ID_SIZE];
-  char value_storage[EBB_MAX_SESSION_DATA_SIZE];
+  char key_storage[EBB_MAX_SESSION_KEY];
+  char value_storage[EBB_MAX_SESSION_VALUE];
 };
 
 static int session_cache_compare (void *left, void *right) {
@@ -70,8 +86,8 @@ session_cache_store(void *data, gnutls_datum_t key, gnutls_datum_t value)
   rbtree tree = data;
 
   if( tree == NULL
-   || key.size > EBB_MAX_SESSION_ID_SIZE
-   || value.size > EBB_MAX_SESSION_DATA_SIZE
+   || key.size > EBB_MAX_SESSION_KEY
+   || value.size > EBB_MAX_SESSION_VALUE
     ) return -1;
 
   struct session_cache *cache = gnutls_malloc(sizeof(struct session_cache));
@@ -135,50 +151,6 @@ session_cache_remove (void *data, gnutls_datum_t key)
   return 0;
 }
 
-
-
-
-static void set_nonblock (int fd)
-{
-  int flags = fcntl(fd, F_GETFL, 0);
-  int r = fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-  assert(0 <= r && "Setting socket non-block failed!");
-}
-
-static ssize_t push(void *data, const void *buf, size_t len)
-{
-  ebb_connection *connection = data;
-  return send(connection->fd, buf, len, MSG_NOSIGNAL);
-}
-
-static ssize_t pull(void *data, void *buf, size_t len)
-{
-  ebb_connection *connection = data;
-  return recv(connection->fd, buf, len, 0);
-}
-
-/* Internal callback 
- * called by connection->timeout_watcher
- */
-static void on_timeout(struct ev_loop *loop, ev_timer *watcher, int revents)
-{
-  ebb_connection *connection = watcher->data;
-
-  //printf("on_timeout\n");
-
-  /* if on_timeout returns true, we don't time out */
-  if( connection->on_timeout 
-   && connection->on_timeout(connection) != EBB_AGAIN
-    ) 
-  {
-    ebb_connection_reset_timeout(connection);
-    return;
-  }
-
-  ebb_connection_close(connection);
-  FREE_CONNECTION_IF_CLOSED 
-}
-
 static void on_handshake(struct ev_loop *loop ,ev_io *watcher, int revents)
 {
   ebb_connection *connection = watcher->data;
@@ -218,11 +190,36 @@ error:
   FREE_CONNECTION_IF_CLOSED 
 }
 
+#endif /* HAVE_GNUTLS */
+
+/* Internal callback 
+ * called by connection->timeout_watcher
+ */
+static void on_timeout(struct ev_loop *loop, ev_timer *watcher, int revents)
+{
+  ebb_connection *connection = watcher->data;
+
+  assert(watcher == &connection->timeout_watcher);
+
+  //printf("on_timeout\n");
+
+  /* if on_timeout returns true, we don't time out */
+  if( connection->on_timeout 
+   && connection->on_timeout(connection) != EBB_AGAIN
+    ) 
+  {
+    ebb_connection_reset_timeout(connection);
+    return;
+  }
+
+  ebb_connection_close(connection);
+  FREE_CONNECTION_IF_CLOSED 
+}
+
 /* Internal callback 
  * called by connection->write_watcher
- * Use ebb_connection_write to send data to this
  */
-static void on_writable(struct ev_loop *loop ,ev_io *watcher, int revents)
+static void on_writable(struct ev_loop *loop, ev_io *watcher, int revents)
 {
   ebb_connection *connection = watcher->data;
   ebb_buf *buf = connection->to_write;
@@ -233,6 +230,9 @@ static void on_writable(struct ev_loop *loop ,ev_io *watcher, int revents)
   assert(buf != NULL);
   assert(buf->written <= buf->len);
   assert(ev_is_active(&connection->timeout_watcher));
+  assert(watcher == &connection->write_watcher);
+
+#ifdef HAVE_GNUTLS
   assert(!ev_is_active(&connection->handshake_watcher));
 
   if(connection->server->secure) {
@@ -248,10 +248,15 @@ static void on_writable(struct ev_loop *loop ,ev_io *watcher, int revents)
       return; 
     }
   } else {
-    sent = push(connection, buf->base + buf->written, buf->len - buf->written);
+#endif /* HAVE_GNUTLS */
+
+    sent = nosigpipe_push(connection, buf->base + buf->written, buf->len - buf->written);
     if(sent < 0) goto error;
     if(sent == 0) return;
+
+#ifdef HAVE_GNUTLS
   }
+#endif /* HAVE_GNUTLS */
 
   ebb_connection_reset_timeout(connection);
 
@@ -282,7 +287,7 @@ static void on_readable(struct ev_loop *loop, ev_io *watcher, int revents)
   //printf("on_readable\n");
 
   assert(ev_is_active(&connection->timeout_watcher));
-  assert(!ev_is_active(&connection->handshake_watcher));
+  assert(watcher == &connection->read_watcher);
 
   if(EV_ERROR & revents) {
     error(0, 0, "on_readable() got error event, closing connection.\n");
@@ -293,6 +298,9 @@ static void on_readable(struct ev_loop *loop, ev_io *watcher, int revents)
   if(connection->new_buf)
     buf = connection->new_buf(connection);
   if(buf == NULL) goto error; 
+
+#ifdef HAVE_GNUTLS
+  assert(!ev_is_active(&connection->handshake_watcher));
 
   if(connection->server->secure) {
     recved = gnutls_record_recv( connection->session
@@ -307,10 +315,15 @@ static void on_readable(struct ev_loop *loop, ev_io *watcher, int revents)
       return; 
     } 
   } else {
-    recved = push(connection, buf->base, buf->len);
+#endif /* HAVE_GNUTLS */
+
+    recved = recv(connection->fd, buf->base, buf->len, 0);
     if(recved < 0) goto error;
     if(recved == 0) return;
+
+#ifdef HAVE_GNUTLS
   }
+#endif /* HAVE_GNUTLS */
 
   ebb_connection_reset_timeout(connection);
 
@@ -377,15 +390,20 @@ static void on_connection(struct ev_loop *loop, ev_io *watcher, int revents)
   if(server->port[0] != '\0')
     connection->ip = inet_ntoa(connection->sockaddr.sin_addr);  
 
+#ifdef SO_NOSIGPIPE
+  int arg = 1;
+  setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &arg, sizeof(int));
+#endif
+
+#ifdef HAVE_GNUTLS
   if(server->secure) {
     gnutls_init(&connection->session, GNUTLS_SERVER);
     gnutls_transport_set_lowat(connection->session, 0); 
     gnutls_set_default_priority(connection->session);
     gnutls_credentials_set(connection->session, GNUTLS_CRD_CERTIFICATE, connection->server->credentials);
 
-    gnutls_transport_set_ptr(connection->session, (gnutls_transport_ptr) connection); 
-    gnutls_transport_set_push_function(connection->session, push);
-    gnutls_transport_set_pull_function(connection->session, pull);
+    gnutls_transport_set_ptr(connection->session, (gnutls_transport_ptr) fd); 
+    gnutls_transport_set_push_function(connection->session, nosigpipe_push);
 
     gnutls_db_set_ptr (connection->session, &server->session_cache);
     gnutls_db_set_store_function (connection->session, session_cache_store);
@@ -394,14 +412,18 @@ static void on_connection(struct ev_loop *loop, ev_io *watcher, int revents)
   }
 
   ev_io_set(&connection->handshake_watcher, connection->fd, EV_READ | EV_WRITE | EV_ERROR);
+#endif /* HAVE_GNUTLS */
+
   /* Note: not starting the write watcher until there is data to be written */
   ev_io_set(&connection->write_watcher, connection->fd, EV_WRITE);
   ev_io_set(&connection->read_watcher, connection->fd, EV_READ | EV_ERROR);
   /* XXX: seperate error watcher? */
 
+#ifdef HAVE_GNUTLS
   if(server->secure)
     ev_io_start(loop, &connection->handshake_watcher);
   else
+#endif /* HAVE_GNUTLS */
     ev_io_start(loop, &connection->read_watcher);
   ev_timer_start(loop, &connection->timeout_watcher);
 }
@@ -518,6 +540,7 @@ void ebb_server_init(ebb_server *server, struct ev_loop *loop)
   server->data = NULL;
 }
 
+#ifdef HAVE_GNUTLS
 /* similar to server_init. 
  *
  * the user of secure server might want to set additional callbacks from
@@ -550,6 +573,7 @@ void ebb_secure_server_init(ebb_server *server, struct ev_loop *loop,
 
   rbtree_init(&server->session_cache, session_cache_compare);
 }
+#endif /* HAVE_GNUTLS */
 
 static ebb_buf* default_new_buf(ebb_connection *connection)
 {
@@ -608,13 +632,15 @@ void ebb_connection_init(ebb_connection *connection, float timeout)
   connection->read_watcher.data = connection;
   ev_init(&connection->read_watcher, on_readable);
 
+#ifdef HAVE_GNUTLS
   connection->handshake_watcher.data = connection;
   ev_init(&connection->handshake_watcher, on_handshake);
 
+  connection->session = NULL;
+#endif /* HAVE_GNUTLS */
+
   connection->timeout_watcher.data = connection;  
   ev_timer_init(&connection->timeout_watcher, on_timeout, timeout, timeout);
-
-  connection->session = NULL;
 
   connection->new_buf = default_new_buf;
   connection->new_request = NULL;
@@ -629,21 +655,20 @@ void ebb_connection_close(ebb_connection *connection)
   if(connection->open) {
     ev_io_stop(connection->server->loop, &connection->read_watcher);
     ev_io_stop(connection->server->loop, &connection->write_watcher);
-    ev_io_stop(connection->server->loop, &connection->handshake_watcher);
     ev_timer_stop(connection->server->loop, &connection->timeout_watcher);
 
+#ifdef HAVE_GNUTLS
+    ev_io_stop(connection->server->loop, &connection->handshake_watcher);
     if(connection->session) {
       gnutls_deinit(connection->session);
     }
+#endif /* HAVE_GNUTLS */
+
     int r =  close(connection->fd);
     assert(r == 0);
-    
     connection->open = FALSE;
-
-
     if(connection->on_close)
       connection->on_close(connection);
-
   }
 }
 
