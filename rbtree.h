@@ -1,5 +1,6 @@
 /* Copyright (c) 2008 Derrick Coetzee
  * http://en.literateprograms.org/Red-black_tree_(C)?oldid=7982
+ * Small changes by Ryah Dahl
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the

@@ -4,18 +4,20 @@
  * This software may be distributed under the "MIT" license included in the
  * README
  */
-#ifndef server_h
-#define server_h
+#ifndef EBB_H
+#define EBB_H
+
+/* remove this if you want to embed libebb without GNUTLS */
+#define HAVE_GNUTLS 1
 
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include "ebb_request_parser.h"
 #include <ev.h>
-
 #ifdef HAVE_GNUTLS
-#  include <gnutls/gnutls.h>
-#  include "rbtree.h" /* for ebb_server.session_cache */
-#endif
+# include <gnutls/gnutls.h>
+# include "rbtree.h" /* for ebb_server.session_cache */
+#endif 
+#include "ebb_request_parser.h"
 
 #define EBB_MAX_CONNECTIONS 1024
 
@@ -59,8 +61,10 @@ struct ebb_server {
 };
 
 void ebb_server_init( ebb_server *server, struct ev_loop *loop);
+#ifdef HAVE_GNUTLS
 void ebb_secure_server_init(ebb_server *server, struct ev_loop *loop, 
                             const char *cert_file, const char *key_file);
+#endif
 int ebb_server_listen_on_port(ebb_server *server, const int port);
 int ebb_server_listen_on_fd(ebb_server *server, const int sfd);
 void ebb_server_unlisten(ebb_server *server);
@@ -81,7 +85,7 @@ struct ebb_connection {
 #ifdef HAVE_GNUTLS
   ev_io handshake_watcher;     /* private */
   gnutls_session_t session;    /* private */
-#endif 
+#endif
 
   /* Public */
 

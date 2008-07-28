@@ -4,6 +4,7 @@
  * This software may be distributed under the "MIT" license included in the
  * README
  */
+
 #include <assert.h>
 #include <string.h>
 #include <fcntl.h>
@@ -17,16 +18,15 @@
 #include <stdio.h>      /* perror */
 #include <errno.h>      /* perror */
 #include <stdlib.h> /* for the default methods */
-
 #include <ev.h>
-
-#ifdef HAVE_GNUTLS
-#  include <gnutls/gnutls.h>
-#  include "rbtree.h" /* for session_cache */
-#endif
 
 #include "ebb.h"
 #include "ebb_request_parser.h"
+#ifdef HAVE_GNUTLS
+# include <gnutls/gnutls.h>
+# include "rbtree.h" /* for session_cache */
+#endif
+
 
 #define TRUE 1
 #define FALSE 0
