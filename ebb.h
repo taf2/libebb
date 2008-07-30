@@ -29,6 +29,8 @@ typedef struct ebb_buf        ebb_buf;
 typedef struct ebb_server     ebb_server;
 typedef struct ebb_connection ebb_connection;
 
+typedef void (*ebb_connection_cb)(ebb_connection *connection, void *data);
+
 struct ebb_buf {
   size_t written; /* private */
 
@@ -61,15 +63,6 @@ struct ebb_server {
 
   void *data;
 };
-
-void ebb_server_init( ebb_server *server, struct ev_loop *loop);
-#ifdef HAVE_GNUTLS
-void ebb_secure_server_init(ebb_server *server, struct ev_loop *loop, 
-                            const char *cert_file, const char *key_file);
-#endif
-int ebb_server_listen_on_port(ebb_server *server, const int port);
-int ebb_server_listen_on_fd(ebb_server *server, const int sfd);
-void ebb_server_unlisten(ebb_server *server);
 
 struct ebb_connection {
   int fd;                      /* ro */
@@ -113,7 +106,14 @@ struct ebb_connection {
   void *data;
 };
 
-typedef void (*ebb_connection_cb)(ebb_connection *connection, void *data);
+void ebb_server_init (ebb_server *server, struct ev_loop *loop);
+#ifdef HAVE_GNUTLS
+int ebb_server_set_secure (ebb_server *server, 
+                           const char *cert_file, const char *key_file);
+#endif
+int ebb_server_listen_on_port (ebb_server *server, const int port);
+int ebb_server_listen_on_fd (ebb_server *server, const int sfd);
+void ebb_server_unlisten (ebb_server *server);
 
 void ebb_connection_init(ebb_connection *connection);
 void ebb_connection_close(ebb_connection *);

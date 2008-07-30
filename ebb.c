@@ -566,9 +566,15 @@ void ebb_server_init(ebb_server *server, struct ev_loop *loop)
   server->secure = FALSE;
   server->connection_closed = FALSE;
 
+#ifdef HAVE_GNUTLS
+  rbtree_init(&server->session_cache, session_cache_compare);
+  server->credentials = NULL;
+#endif
+
   server->new_connection = NULL;
   server->data = NULL;
 }
+
 
 #ifdef HAVE_GNUTLS
 /* similar to server_init. 
@@ -585,10 +591,8 @@ void ebb_server_init(ebb_server *server, struct ev_loop *loop)
  * key_file: the filename of a private key. Currently only PKCS-1 encoded
  * RSA and DSA private keys are accepted. 
  */
-void ebb_secure_server_init(ebb_server *server, struct ev_loop *loop, 
-                            const char *cert_file, const char *key_file)
+int ebb_server_set_secure (ebb_server *server, const char *cert_file, const char *key_file)
 {
-  ebb_server_init(server, loop);
   server->secure = TRUE;
   gnutls_global_init();
   gnutls_certificate_allocate_credentials(&server->credentials);
@@ -598,10 +602,11 @@ void ebb_secure_server_init(ebb_server *server, struct ev_loop *loop,
                                               , key_file
                                               , GNUTLS_X509_FMT_PEM
                                               );
-  assert(r >= 0 && "error loading certificates");
-
-
-  rbtree_init(&server->session_cache, session_cache_compare);
+  if(r < 0) {
+    error(0, 0, "error loading certificates");
+    return -1;
+  }
+  return 1;
 }
 #endif /* HAVE_GNUTLS */
 
