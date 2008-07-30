@@ -27,14 +27,14 @@
 # include "rbtree.h" /* for session_cache */
 #endif
 
-
 #define TRUE 1
 #define FALSE 0
 #define MIN(a,b) (a < b ? a : b)
 
-#define FREE_CONNECTION_IF_CLOSED \
-  if(!connection->open && connection->free) connection->free(connection);
 #define CONNECTION_HAS_SOMETHING_TO_WRITE (connection->to_write != NULL)
+
+#define DETECT_CLOSURE_BEGIN connection->server->connection_closed = FALSE;
+#define DETECT_CLOSURE_END if(connection->server->connection_closed) return;
 
 static void set_nonblock (int fd)
 {
@@ -66,7 +66,9 @@ struct session_cache {
   char value_storage[EBB_MAX_SESSION_VALUE];
 };
 
-static int session_cache_compare (void *left, void *right) {
+static int 
+session_cache_compare (void *left, void *right) 
+{
   gnutls_datum_t *left_key = left;
   gnutls_datum_t *right_key = right;
   if(left_key->size < right_key->size)
@@ -151,7 +153,8 @@ session_cache_remove (void *data, gnutls_datum_t key)
   return 0;
 }
 
-static void on_handshake(struct ev_loop *loop ,ev_io *watcher, int revents)
+static void 
+on_handshake(struct ev_loop *loop ,ev_io *watcher, int revents)
 {
   ebb_connection *connection = watcher->data;
 
@@ -187,7 +190,6 @@ static void on_handshake(struct ev_loop *loop ,ev_io *watcher, int revents)
   return;
 error:
   ebb_connection_close(connection);
-  FREE_CONNECTION_IF_CLOSED 
 }
 
 #endif /* HAVE_GNUTLS */
@@ -204,16 +206,18 @@ static void on_timeout(struct ev_loop *loop, ev_timer *watcher, int revents)
   //printf("on_timeout\n");
 
   /* if on_timeout returns true, we don't time out */
-  if( connection->on_timeout 
-   && connection->on_timeout(connection) != EBB_AGAIN
-    ) 
-  {
-    ebb_connection_reset_timeout(connection);
-    return;
+  if(connection->on_timeout) {
+    DETECT_CLOSURE_BEGIN
+    int r = connection->on_timeout(connection);
+    DETECT_CLOSURE_END
+
+    if(r == EBB_AGAIN) {
+      ebb_connection_reset_timeout(connection);
+      return;
+    }
   }
 
   ebb_connection_close(connection);
-  FREE_CONNECTION_IF_CLOSED 
 }
 
 /* Internal callback 
@@ -229,7 +233,8 @@ static void on_writable(struct ev_loop *loop, ev_io *watcher, int revents)
 
   assert(buf != NULL);
   assert(buf->written <= buf->len);
-  assert(ev_is_active(&connection->timeout_watcher));
+  // TODO -- why is this broken?
+  //assert(ev_is_active(&connection->timeout_watcher));
   assert(watcher == &connection->write_watcher);
 
 #ifdef HAVE_GNUTLS
@@ -265,14 +270,16 @@ static void on_writable(struct ev_loop *loop, ev_io *watcher, int revents)
   if(buf->written == buf->len) {
     ev_io_stop(loop, watcher);
     connection->to_write = NULL;
+
+    DETECT_CLOSURE_BEGIN
     if(buf->free)
       buf->free(buf);
+    DETECT_CLOSURE_END
   }
   return;
 error:
   error(0, 0, "close connection on write.\n");
   ebb_connection_close(connection);
-  FREE_CONNECTION_IF_CLOSED 
 }
 
 
@@ -282,11 +289,15 @@ error:
 static void on_readable(struct ev_loop *loop, ev_io *watcher, int revents)
 {
   ebb_connection *connection = watcher->data;
+  char base[TCP_MAXWIN];
+  char *recv_buffer = base;
+  size_t recv_buffer_size = TCP_MAXWIN;
   ssize_t recved;
 
   //printf("on_readable\n");
 
-  assert(ev_is_active(&connection->timeout_watcher));
+  // TODO -- why is this broken?
+  //assert(ev_is_active(&connection->timeout_watcher));
   assert(watcher == &connection->read_watcher);
 
   if(EV_ERROR & revents) {
@@ -295,17 +306,22 @@ static void on_readable(struct ev_loop *loop, ev_io *watcher, int revents)
   }
 
   ebb_buf *buf = NULL;
-  if(connection->new_buf)
+  if(connection->new_buf) {
+    DETECT_CLOSURE_BEGIN
     buf = connection->new_buf(connection);
-  if(buf == NULL) goto error; 
+    DETECT_CLOSURE_END
+    if(buf == NULL) return; 
+    recv_buffer = buf->base;
+    recv_buffer_size = buf->len;
+  }
 
 #ifdef HAVE_GNUTLS
   assert(!ev_is_active(&connection->handshake_watcher));
 
   if(connection->server->secure) {
     recved = gnutls_record_recv( connection->session
-                               , buf->base
-                               , buf->len
+                               , recv_buffer
+                               , recv_buffer_size
                                );
     if(recved <= 0) {
       if(gnutls_error_is_fatal(recved)) goto error;
@@ -317,7 +333,7 @@ static void on_readable(struct ev_loop *loop, ev_io *watcher, int revents)
   } else {
 #endif /* HAVE_GNUTLS */
 
-    recved = recv(connection->fd, buf->base, buf->len, 0);
+    recved = recv(connection->fd, recv_buffer, recv_buffer_size, 0);
     if(recved < 0) goto error;
     if(recved == 0) return;
 
@@ -327,19 +343,29 @@ static void on_readable(struct ev_loop *loop, ev_io *watcher, int revents)
 
   ebb_connection_reset_timeout(connection);
 
-  ebb_request_parser_execute(&connection->parser, buf->base, recved);
+  DETECT_CLOSURE_BEGIN
+  ebb_request_parser_execute(&connection->parser, recv_buffer, recved);
+  DETECT_CLOSURE_END
+
   /* parse error? just drop the client. screw the 400 response */
   if(ebb_request_parser_has_error(&connection->parser)) goto error;
 
-  if(buf->free)
+  DETECT_CLOSURE_BEGIN
+  if(buf && buf->free)
     buf->free(buf);
+  DETECT_CLOSURE_END
 
-  FREE_CONNECTION_IF_CLOSED 
   return;
-
 error:
   ebb_connection_close(connection);
-  FREE_CONNECTION_IF_CLOSED 
+}
+
+static ebb_request* new_request_wrapper(void *data)
+{
+  ebb_connection *connection = data;
+  if(connection->new_request)
+    return connection->new_request(connection);
+  return NULL;
 }
 
 
@@ -419,13 +445,16 @@ static void on_connection(struct ev_loop *loop, ev_io *watcher, int revents)
   ev_io_set(&connection->read_watcher, connection->fd, EV_READ | EV_ERROR);
   /* XXX: seperate error watcher? */
 
-#ifdef HAVE_GNUTLS
-  if(server->secure)
-    ev_io_start(loop, &connection->handshake_watcher);
-  else
-#endif /* HAVE_GNUTLS */
-    ev_io_start(loop, &connection->read_watcher);
   ev_timer_start(loop, &connection->timeout_watcher);
+
+#ifdef HAVE_GNUTLS
+  if(server->secure) {
+    ev_io_start(loop, &connection->handshake_watcher);
+    return;
+  }
+#endif
+
+  ev_io_start(loop, &connection->read_watcher);
 }
 
 /**
@@ -474,8 +503,8 @@ int ebb_server_listen_on_port(ebb_server *server, const int port)
   setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, (void *)&flags, sizeof(flags));
   setsockopt(fd, SOL_SOCKET, SO_LINGER, (void *)&ling, sizeof(ling));
 
-  /* TODO: Sending single byte chunks in a response body? Perhaps there is
-   * a need to enable the Nagel algorithm dynamically. For now disabling.
+  /* XXX: Sending single byte chunks in a response body? Perhaps there is a
+   * need to enable the Nagel algorithm dynamically. For now disabling.
    */
   setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (void *)&flags, sizeof(flags));
   
@@ -535,6 +564,7 @@ void ebb_server_init(ebb_server *server, struct ev_loop *loop)
   server->connection_watcher.data = server;
   ev_init (&server->connection_watcher, on_connection);
   server->secure = FALSE;
+  server->connection_closed = FALSE;
 
   server->new_connection = NULL;
   server->data = NULL;
@@ -575,24 +605,6 @@ void ebb_secure_server_init(ebb_server *server, struct ev_loop *loop,
 }
 #endif /* HAVE_GNUTLS */
 
-static ebb_buf* default_new_buf(ebb_connection *connection)
-{
-  static ebb_buf buf;
-  static char base[TCP_MAXWIN];
-  buf.base = base;
-  buf.len = TCP_MAXWIN;
-  buf.free = NULL;
-  return &buf;
-}
-
-static ebb_request* new_request_wrapper(void *data)
-{
-  ebb_connection *connection = data;
-  if(connection->new_request)
-    return connection->new_request(connection);
-  return NULL;
-}
-
 /**
  * Initialize an ebb_connection structure. After calling this function you
  * must setup callbacks for the different actions the server can take. See
@@ -613,24 +625,23 @@ static ebb_request* new_request_wrapper(void *data)
  * @param connection the connection to initialize
  * @param timeout    the timeout in seconds
  */
-void ebb_connection_init(ebb_connection *connection, float timeout)
+void ebb_connection_init(ebb_connection *connection)
 {
   connection->fd = -1;
   connection->server = NULL;
   connection->ip = NULL;
   connection->open = FALSE;
-  connection->timeout = timeout;
 
   ebb_request_parser_init( &connection->parser );
   connection->parser.data = connection;
   connection->parser.new_request = new_request_wrapper;
   
-  connection->write_watcher.data = connection;
   ev_init (&connection->write_watcher, on_writable);
+  connection->write_watcher.data = connection;
   connection->to_write = NULL;
 
-  connection->read_watcher.data = connection;
   ev_init(&connection->read_watcher, on_readable);
+  connection->read_watcher.data = connection;
 
 #ifdef HAVE_GNUTLS
   connection->handshake_watcher.data = connection;
@@ -639,14 +650,13 @@ void ebb_connection_init(ebb_connection *connection, float timeout)
   connection->session = NULL;
 #endif /* HAVE_GNUTLS */
 
+  ev_timer_init(&connection->timeout_watcher, on_timeout, EBB_DEFAULT_TIMEOUT, 0.);
   connection->timeout_watcher.data = connection;  
-  ev_timer_init(&connection->timeout_watcher, on_timeout, timeout, timeout);
 
-  connection->new_buf = default_new_buf;
+  connection->new_buf = NULL;
   connection->new_request = NULL;
   connection->on_timeout = NULL;
   connection->on_close = NULL;
-  connection->free = NULL;
   connection->data = NULL;
 }
 
@@ -664,8 +674,9 @@ void ebb_connection_close(ebb_connection *connection)
     }
 #endif /* HAVE_GNUTLS */
 
-    int r =  close(connection->fd);
-    assert(r == 0);
+    if(0 > close(connection->fd))
+      error(0, 0, "problem closing connection fd");
+
     connection->open = FALSE;
     if(connection->on_close)
       connection->on_close(connection);
@@ -677,9 +688,7 @@ void ebb_connection_close(ebb_connection *connection)
  */
 void ebb_connection_reset_timeout(ebb_connection *connection)
 {
-  ev_timer_again( connection->server->loop
-                , &connection->timeout_watcher
-                );
+  ev_timer_again(connection->server->loop, &connection->timeout_watcher);
 }
 
 /**

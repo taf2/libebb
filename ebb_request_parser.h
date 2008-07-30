@@ -49,7 +49,6 @@ struct ebb_request {
   unsigned int version_minor;        /* ro */
   int number_of_headers;             /* ro */
   int keep_alive;                    /* private - use ebb_request_should_keep_alive */
-  ebb_request_parser *parser;
 
   char multipart_boundary[EBB_MAX_MULTIPART_BOUNDARY_LEN]; /* ro */
   unsigned int multipart_boundary_len; /* ro */
@@ -64,7 +63,6 @@ struct ebb_request {
   void (*headers_complete)(ebb_request *);
   ebb_element_cb body_handler;
   void (*request_complete)(ebb_request *);
-  void (*free)(ebb_request*);
   void *data;
 };
 

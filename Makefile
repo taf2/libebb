@@ -46,12 +46,15 @@ test: test_request_parser test_rbtree
 
 examples: examples/hello_world
 
-examples/hello_world: examples/hello_world.c libebb.so
-	gcc ${CFLAGS} ${LIBS} -L. -lebb -lefence $< -o $@
+examples/hello_world: examples/hello_world.c ebb.o ebb_request_parser.o rbtree.o 
+	gcc ${CFLAGS} ${LIBS} -lefence $^ -o $@
 
 #
 # Other
 #
+
+tags: *.c *.h *.rl examples/*.c
+	ctags $^
 
 upload_website:
 	scp -r doc/index.html doc/icon.png rydahl@tinyclouds.org:~/web/public/libebb

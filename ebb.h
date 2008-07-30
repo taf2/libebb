@@ -20,6 +20,7 @@
 #include "ebb_request_parser.h"
 
 #define EBB_MAX_CONNECTIONS 1024
+#define EBB_DEFAULT_TIMEOUT 30.0
 
 #define EBB_AGAIN 0
 #define EBB_STOP 1
@@ -51,6 +52,7 @@ struct ebb_server {
   struct rbtree_t session_cache;                /* private */
 #endif
   ev_io connection_watcher;                     /* private */
+  unsigned connection_closed:1;                 /* PRIVATE */
 
   /* Public */
 
@@ -74,7 +76,6 @@ struct ebb_connection {
   struct sockaddr_in sockaddr; /* ro */
   socklen_t socklen;           /* ro */ 
   ebb_server *server;          /* ro */
-  float timeout;               /* ro */
   char *ip;                    /* ro */
   unsigned open:1;             /* ro */
   ebb_buf *to_write;           /* ro */
@@ -109,21 +110,14 @@ struct ebb_connection {
   /* The connection was closed */
   void (*on_close) (ebb_connection*); 
 
-  /* Called when libebb will no longer use this structure. 
-   * NULL by default.
-   */
-  void (*free) (ebb_connection*); 
-
   void *data;
 };
 
 typedef void (*ebb_connection_cb)(ebb_connection *connection, void *data);
 
-void ebb_connection_init(ebb_connection *connection, float timeout);
+void ebb_connection_init(ebb_connection *connection);
 void ebb_connection_close(ebb_connection *);
 void ebb_connection_reset_timeout(ebb_connection *connection);
 int ebb_connection_write(ebb_connection *connection, ebb_buf *buf);
-
-#define ebb_request_connection(request) ((ebb_connection*)(request->parser->data))
 
 #endif

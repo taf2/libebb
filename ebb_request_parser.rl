@@ -39,8 +39,6 @@
 #define END_REQUEST                            \
     if(CURRENT->request_complete)              \
       CURRENT->request_complete(CURRENT);      \
-    if(CURRENT->free)                          \
-      CURRENT->free(CURRENT);                  \
     CURRENT = NULL;
 
 %%{
@@ -194,7 +192,6 @@
   action start_req {
     assert(CURRENT == NULL);
     CURRENT = parser->new_request(parser->data);
-    CURRENT->parser = parser;
   }
 
   action body_logic {
@@ -490,9 +487,7 @@ void ebb_request_init(ebb_request *request)
   request->transfer_encoding = EBB_IDENTITY;
   request->multipart_boundary_len = 0;
   request->keep_alive = -1;
-  request->parser = NULL;
 
-  request->free = NULL;
   request->request_complete = NULL;
   request->headers_complete = NULL;
   request->body_handler = NULL;
