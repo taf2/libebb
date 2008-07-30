@@ -33,9 +33,6 @@
 
 #define CONNECTION_HAS_SOMETHING_TO_WRITE (connection->to_write != NULL)
 
-#define DETECT_CLOSURE_BEGIN connection->server->connection_closed = FALSE;
-#define DETECT_CLOSURE_END if(connection->server->connection_closed) return;
-
 static void set_nonblock (int fd)
 {
   int flags = fcntl(fd, F_GETFL, 0);
@@ -154,6 +151,29 @@ session_cache_remove (void *data, gnutls_datum_t key)
 }
 
 static void 
+close_connection(ebb_connection *connection)
+{
+#ifdef HAVE_GNUTLS
+  if(connection->server->secure)
+    ev_io_stop(connection->server->loop, &connection->handshake_watcher);
+#endif
+  ev_io_stop(connection->server->loop, &connection->read_watcher);
+  ev_io_stop(connection->server->loop, &connection->write_watcher);
+  ev_timer_stop(connection->server->loop, &connection->timeout_watcher);
+
+  if(0 > close(connection->fd))
+    error(0, 0, "problem closing connection fd");
+
+  connection->open = FALSE;
+
+  if(connection->on_close)
+    connection->on_close(connection);
+  /* No access to the connection past this point! 
+   * The user is allowed to free in the callback
+   */
+}
+
+static void 
 on_handshake(struct ev_loop *loop ,ev_io *watcher, int revents)
 {
   ebb_connection *connection = watcher->data;
@@ -189,10 +209,11 @@ on_handshake(struct ev_loop *loop ,ev_io *watcher, int revents)
 
   return;
 error:
-  ebb_connection_close(connection);
+  close_connection(connection);
 }
 
 #endif /* HAVE_GNUTLS */
+
 
 /* Internal callback 
  * called by connection->timeout_watcher
@@ -207,9 +228,7 @@ static void on_timeout(struct ev_loop *loop, ev_timer *watcher, int revents)
 
   /* if on_timeout returns true, we don't time out */
   if(connection->on_timeout) {
-    DETECT_CLOSURE_BEGIN
     int r = connection->on_timeout(connection);
-    DETECT_CLOSURE_END
 
     if(r == EBB_AGAIN) {
       ebb_connection_reset_timeout(connection);
@@ -217,7 +236,78 @@ static void on_timeout(struct ev_loop *loop, ev_timer *watcher, int revents)
     }
   }
 
-  ebb_connection_close(connection);
+  ebb_connection_schedule_close(connection);
+}
+
+/* Internal callback 
+ * called by connection->read_watcher
+ */
+static void on_readable(struct ev_loop *loop, ev_io *watcher, int revents)
+{
+  ebb_connection *connection = watcher->data;
+  char base[TCP_MAXWIN];
+  char *recv_buffer = base;
+  size_t recv_buffer_size = TCP_MAXWIN;
+  ssize_t recved;
+
+  //printf("on_readable\n");
+
+  // TODO -- why is this broken?
+  //assert(ev_is_active(&connection->timeout_watcher));
+  assert(watcher == &connection->read_watcher);
+
+  if(EV_ERROR & revents) {
+    error(0, 0, "on_readable() got error event, closing connection.\n");
+    goto error;
+  }
+
+  ebb_buf *buf = NULL;
+  if(connection->new_buf) {
+    buf = connection->new_buf(connection);
+    if(buf == NULL) return; 
+    recv_buffer = buf->base;
+    recv_buffer_size = buf->len;
+  }
+
+#ifdef HAVE_GNUTLS
+  assert(!ev_is_active(&connection->handshake_watcher));
+
+  if(connection->server->secure) {
+    recved = gnutls_record_recv( connection->session
+                               , recv_buffer
+                               , recv_buffer_size
+                               );
+    if(recved <= 0) {
+      if(gnutls_error_is_fatal(recved)) goto error;
+      if( (recved == GNUTLS_E_INTERRUPTED || recved == GNUTLS_E_AGAIN)
+       && GNUTLS_NEED_WRITE
+        ) ev_io_start(loop, &connection->write_watcher);
+      return; 
+    } 
+  } else {
+#endif /* HAVE_GNUTLS */
+
+    recved = recv(connection->fd, recv_buffer, recv_buffer_size, 0);
+    if(recved < 0) goto error;
+    if(recved == 0) return;
+
+#ifdef HAVE_GNUTLS
+  }
+#endif /* HAVE_GNUTLS */
+
+  ebb_connection_reset_timeout(connection);
+
+  ebb_request_parser_execute(&connection->parser, recv_buffer, recved);
+
+  /* parse error? just drop the client. screw the 400 response */
+  if(ebb_request_parser_has_error(&connection->parser)) goto error;
+
+  if(buf && buf->free)
+    buf->free(buf);
+
+  return;
+error:
+  ebb_connection_schedule_close(connection);
 }
 
 /* Internal callback 
@@ -271,94 +361,56 @@ static void on_writable(struct ev_loop *loop, ev_io *watcher, int revents)
     ev_io_stop(loop, watcher);
     connection->to_write = NULL;
 
-    DETECT_CLOSURE_BEGIN
     if(buf->free)
       buf->free(buf);
-    DETECT_CLOSURE_END
   }
   return;
 error:
   error(0, 0, "close connection on write.\n");
-  ebb_connection_close(connection);
+  ebb_connection_schedule_close(connection);
 }
 
+#ifdef HAVE_GNUTLS
 
-/* Internal callback 
- * called by connection->read_watcher
- */
-static void on_readable(struct ev_loop *loop, ev_io *watcher, int revents)
+static void 
+on_goodbye_tls(struct ev_loop *loop, ev_io *watcher, int revents)
 {
   ebb_connection *connection = watcher->data;
-  char base[TCP_MAXWIN];
-  char *recv_buffer = base;
-  size_t recv_buffer_size = TCP_MAXWIN;
-  ssize_t recved;
-
-  //printf("on_readable\n");
-
-  // TODO -- why is this broken?
-  //assert(ev_is_active(&connection->timeout_watcher));
-  assert(watcher == &connection->read_watcher);
+  assert(watcher == &connection->goodbye_tls_watcher);
 
   if(EV_ERROR & revents) {
-    error(0, 0, "on_readable() got error event, closing connection.\n");
-    goto error;
+    error(0, 0, "on_goodbye() got error event, closing connection.\n");
+    goto die;
   }
 
-  ebb_buf *buf = NULL;
-  if(connection->new_buf) {
-    DETECT_CLOSURE_BEGIN
-    buf = connection->new_buf(connection);
-    DETECT_CLOSURE_END
-    if(buf == NULL) return; 
-    recv_buffer = buf->base;
-    recv_buffer_size = buf->len;
+  int r = gnutls_bye(connection->session, GNUTLS_SHUT_RDWR);
+  if(r < 0) {
+    if(gnutls_error_is_fatal(r)) goto die;
+    if(r == GNUTLS_E_INTERRUPTED || r == GNUTLS_E_AGAIN)
+      ev_io_set( watcher
+               , connection->fd
+               , EV_ERROR | (GNUTLS_NEED_WRITE ? EV_WRITE : EV_READ)
+               );
+    return;
   }
 
-#ifdef HAVE_GNUTLS
-  assert(!ev_is_active(&connection->handshake_watcher));
-
-  if(connection->server->secure) {
-    recved = gnutls_record_recv( connection->session
-                               , recv_buffer
-                               , recv_buffer_size
-                               );
-    if(recved <= 0) {
-      if(gnutls_error_is_fatal(recved)) goto error;
-      if( (recved == GNUTLS_E_INTERRUPTED || recved == GNUTLS_E_AGAIN)
-       && GNUTLS_NEED_WRITE
-        ) ev_io_start(loop, &connection->write_watcher);
-      return; 
-    } 
-  } else {
-#endif /* HAVE_GNUTLS */
-
-    recved = recv(connection->fd, recv_buffer, recv_buffer_size, 0);
-    if(recved < 0) goto error;
-    if(recved == 0) return;
-
-#ifdef HAVE_GNUTLS
-  }
-#endif /* HAVE_GNUTLS */
-
-  ebb_connection_reset_timeout(connection);
-
-  DETECT_CLOSURE_BEGIN
-  ebb_request_parser_execute(&connection->parser, recv_buffer, recved);
-  DETECT_CLOSURE_END
-
-  /* parse error? just drop the client. screw the 400 response */
-  if(ebb_request_parser_has_error(&connection->parser)) goto error;
-
-  DETECT_CLOSURE_BEGIN
-  if(buf && buf->free)
-    buf->free(buf);
-  DETECT_CLOSURE_END
-
-  return;
-error:
-  ebb_connection_close(connection);
+die:
+  ev_io_stop(loop, watcher);
+  if(connection->session) 
+    gnutls_deinit(connection->session);
+  close_connection(connection);
 }
+#endif /* HAVE_GNUTLS*/
+
+static void 
+on_goodbye(struct ev_loop *loop, ev_timer *watcher, int revents)
+{
+  ebb_connection *connection = watcher->data;
+  assert(watcher == &connection->goodbye_watcher);
+
+  close_connection(connection);
+}
+
 
 static ebb_request* new_request_wrapper(void *data)
 {
@@ -367,7 +419,6 @@ static ebb_request* new_request_wrapper(void *data)
     return connection->new_request(connection);
   return NULL;
 }
-
 
 /* Internal callback 
  * Called by server->connection_watcher.
@@ -564,7 +615,6 @@ void ebb_server_init(ebb_server *server, struct ev_loop *loop)
   server->connection_watcher.data = server;
   ev_init (&server->connection_watcher, on_connection);
   server->secure = FALSE;
-  server->connection_closed = FALSE;
 
 #ifdef HAVE_GNUTLS
   rbtree_init(&server->session_cache, session_cache_compare);
@@ -652,8 +702,14 @@ void ebb_connection_init(ebb_connection *connection)
   connection->handshake_watcher.data = connection;
   ev_init(&connection->handshake_watcher, on_handshake);
 
+  ev_init(&connection->goodbye_tls_watcher, on_goodbye_tls);
+  connection->goodbye_tls_watcher.data = connection;
+
   connection->session = NULL;
 #endif /* HAVE_GNUTLS */
+
+  ev_timer_init(&connection->goodbye_watcher, on_goodbye, 0., 0.);
+  connection->goodbye_watcher.data = connection;  
 
   ev_timer_init(&connection->timeout_watcher, on_timeout, EBB_DEFAULT_TIMEOUT, 0.);
   connection->timeout_watcher.data = connection;  
@@ -665,27 +721,16 @@ void ebb_connection_init(ebb_connection *connection)
   connection->data = NULL;
 }
 
-void ebb_connection_close(ebb_connection *connection)
+void ebb_connection_schedule_close (ebb_connection *connection)
 {
-  if(connection->open) {
-    ev_io_stop(connection->server->loop, &connection->read_watcher);
-    ev_io_stop(connection->server->loop, &connection->write_watcher);
-    ev_timer_stop(connection->server->loop, &connection->timeout_watcher);
-
 #ifdef HAVE_GNUTLS
-    ev_io_stop(connection->server->loop, &connection->handshake_watcher);
-    if(connection->session) {
-      gnutls_deinit(connection->session);
-    }
-#endif /* HAVE_GNUTLS */
-
-    if(0 > close(connection->fd))
-      error(0, 0, "problem closing connection fd");
-
-    connection->open = FALSE;
-    if(connection->on_close)
-      connection->on_close(connection);
+  if(connection->server->secure) {
+    ev_io_set(&connection->goodbye_tls_watcher, connection->fd, EV_ERROR | EV_READ | EV_WRITE);
+    ev_io_start(connection->server->loop, &connection->goodbye_tls_watcher);
+    return;
   }
+#endif
+  ev_timer_start(connection->server->loop, &connection->goodbye_watcher);
 }
 
 /* 

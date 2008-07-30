@@ -54,7 +54,6 @@ struct ebb_server {
   struct rbtree_t session_cache;                /* private */
 #endif
   ev_io connection_watcher;                     /* private */
-  unsigned connection_closed:1;                 /* PRIVATE */
 
   /* Public */
 
@@ -76,9 +75,11 @@ struct ebb_connection {
   ev_io write_watcher;         /* private */
   ev_io read_watcher;          /* private */
   ev_timer timeout_watcher;    /* private */
+  ev_timer goodbye_watcher;    /* private */
 #ifdef HAVE_GNUTLS
   ev_io handshake_watcher;     /* private */
   gnutls_session_t session;    /* private */
+  ev_io goodbye_tls_watcher;       /* private */
 #endif
 
   /* Public */
@@ -108,16 +109,16 @@ struct ebb_connection {
 
 void ebb_server_init (ebb_server *server, struct ev_loop *loop);
 #ifdef HAVE_GNUTLS
-int ebb_server_set_secure (ebb_server *server, 
-                           const char *cert_file, const char *key_file);
+int ebb_server_set_secure (ebb_server *server, const char *cert_file, 
+                           const char *key_file);
 #endif
 int ebb_server_listen_on_port (ebb_server *server, const int port);
 int ebb_server_listen_on_fd (ebb_server *server, const int sfd);
 void ebb_server_unlisten (ebb_server *server);
 
-void ebb_connection_init(ebb_connection *connection);
-void ebb_connection_close(ebb_connection *);
-void ebb_connection_reset_timeout(ebb_connection *connection);
-int ebb_connection_write(ebb_connection *connection, ebb_buf *buf);
+void ebb_connection_init (ebb_connection *connection);
+void ebb_connection_schedule_close (ebb_connection *);
+void ebb_connection_reset_timeout (ebb_connection *connection);
+int ebb_connection_write (ebb_connection *connection, ebb_buf *buf);
 
 #endif

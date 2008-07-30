@@ -30,7 +30,7 @@ static void continue_responding(ebb_buf *buf)
     /* write another response */
     assert(ebb_connection_write(connection, &connection_data->response));
   else
-    ebb_connection_close(connection);
+    ebb_connection_schedule_close(connection);
 }
 
 static void request_complete(ebb_request *request)
