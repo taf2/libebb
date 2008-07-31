@@ -12,7 +12,6 @@ static int c = 0;
 
 struct hello_connection {
   unsigned int responses_to_write;
-  ebb_buf response;
 };
 
 void on_close(ebb_connection *connection)
@@ -21,16 +20,18 @@ void on_close(ebb_connection *connection)
   free(connection);
 }
 
-static void continue_responding(ebb_buf *buf)
+static void continue_responding(ebb_connection *connection)
 {
-  ebb_connection *connection = buf->data;
+  int r;
   struct hello_connection *connection_data = connection->data;
   //printf("response complete \n");
-  if(--connection_data->responses_to_write > 0)
+  if(--connection_data->responses_to_write > 0) {
     /* write another response */
-    assert(ebb_connection_write(connection, &connection_data->response));
-  else
+    r = ebb_connection_write(connection, MSG, sizeof MSG, continue_responding);
+    assert(r);
+  } else {
     ebb_connection_schedule_close(connection);
+  }
 }
 
 static void request_complete(ebb_request *request)
@@ -38,17 +39,13 @@ static void request_complete(ebb_request *request)
   //printf("request complete \n");
   ebb_connection *connection = request->data;
   struct hello_connection *connection_data = connection->data;
-  connection_data->response.base = MSG;
-  connection_data->response.len = sizeof MSG; 
-  connection_data->response.on_release = continue_responding;
-  connection_data->response.data = connection;
 
   if(ebb_request_should_keep_alive(request))
     connection_data->responses_to_write++;
   else
     connection_data->responses_to_write = 1;
 
-  ebb_connection_write(connection, &connection_data->response);
+  ebb_connection_write(connection, MSG, sizeof MSG, continue_responding);
   free(request);
 }
 

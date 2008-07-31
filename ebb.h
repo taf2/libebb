@@ -28,6 +28,7 @@
 typedef struct ebb_buf        ebb_buf;
 typedef struct ebb_server     ebb_server;
 typedef struct ebb_connection ebb_connection;
+typedef void (*ebb_after_write_cb) (ebb_connection *connection); 
 
 typedef void (*ebb_connection_cb)(ebb_connection *connection, void *data);
 
@@ -70,7 +71,12 @@ struct ebb_connection {
   ebb_server *server;          /* ro */
   char *ip;                    /* ro */
   unsigned open:1;             /* ro */
-  ebb_buf *to_write;           /* ro */
+
+  const char *to_write;              /* ro */
+  size_t to_write_len;               /* ro */
+  size_t written;                    /* ro */ 
+  ebb_after_write_cb after_write_cb; /* ro */
+
   ebb_request_parser parser;   /* private */
   ev_io write_watcher;         /* private */
   ev_io read_watcher;          /* private */
@@ -119,6 +125,6 @@ void ebb_server_unlisten (ebb_server *server);
 void ebb_connection_init (ebb_connection *connection);
 void ebb_connection_schedule_close (ebb_connection *);
 void ebb_connection_reset_timeout (ebb_connection *connection);
-int ebb_connection_write (ebb_connection *connection, ebb_buf *buf);
+int ebb_connection_write (ebb_connection *connection, const char *buf, size_t len, ebb_after_write_cb);
 
 #endif

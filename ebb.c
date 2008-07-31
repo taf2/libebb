@@ -33,17 +33,23 @@
 
 #define CONNECTION_HAS_SOMETHING_TO_WRITE (connection->to_write != NULL)
 
-static void set_nonblock (int fd)
+static void 
+set_nonblock (int fd)
 {
   int flags = fcntl(fd, F_GETFL, 0);
   int r = fcntl(fd, F_SETFL, flags | O_NONBLOCK);
   assert(0 <= r && "Setting socket non-block failed!");
 }
 
-static ssize_t nosigpipe_push(void *data, const void *buf, size_t len)
+static ssize_t 
+nosigpipe_push(void *data, const void *buf, size_t len)
 {
   int fd = (int)data;
-  return send(fd, buf, len, MSG_NOSIGNAL);
+  int flags = 0;
+#ifdef MSG_NOSIGNAL
+  flags = MSG_NOSIGNAL;
+#endif
+  return send(fd, buf, len, flags);
 }
 
 static void 
@@ -218,7 +224,8 @@ error:
 /* Internal callback 
  * called by connection->timeout_watcher
  */
-static void on_timeout(struct ev_loop *loop, ev_timer *watcher, int revents)
+static void 
+on_timeout(struct ev_loop *loop, ev_timer *watcher, int revents)
 {
   ebb_connection *connection = watcher->data;
 
@@ -242,7 +249,8 @@ static void on_timeout(struct ev_loop *loop, ev_timer *watcher, int revents)
 /* Internal callback 
  * called by connection->read_watcher
  */
-static void on_readable(struct ev_loop *loop, ev_io *watcher, int revents)
+static void 
+on_readable(struct ev_loop *loop, ev_io *watcher, int revents)
 {
   ebb_connection *connection = watcher->data;
   char base[TCP_MAXWIN];
@@ -313,16 +321,16 @@ error:
 /* Internal callback 
  * called by connection->write_watcher
  */
-static void on_writable(struct ev_loop *loop, ev_io *watcher, int revents)
+static void 
+on_writable(struct ev_loop *loop, ev_io *watcher, int revents)
 {
   ebb_connection *connection = watcher->data;
-  ebb_buf *buf = connection->to_write;
   ssize_t sent;
   
   //printf("on_writable\n");
 
-  assert(buf != NULL);
-  assert(buf->written <= buf->len);
+  assert(CONNECTION_HAS_SOMETHING_TO_WRITE);
+  assert(connection->written <= connection->to_write_len);
   // TODO -- why is this broken?
   //assert(ev_is_active(&connection->timeout_watcher));
   assert(watcher == &connection->write_watcher);
@@ -332,8 +340,8 @@ static void on_writable(struct ev_loop *loop, ev_io *watcher, int revents)
 
   if(connection->server->secure) {
     sent = gnutls_record_send( connection->session
-                             , buf->base + buf->written
-                             , buf->len - buf->written
+                             , connection->to_write + connection->written
+                             , connection->to_write_len - connection->written
                              ); 
     if(sent <= 0) {
       if(gnutls_error_is_fatal(sent)) goto error;
@@ -345,7 +353,10 @@ static void on_writable(struct ev_loop *loop, ev_io *watcher, int revents)
   } else {
 #endif /* HAVE_GNUTLS */
 
-    sent = nosigpipe_push((void*)connection->fd, buf->base + buf->written, buf->len - buf->written);
+    sent = nosigpipe_push( (void*)connection->fd
+                         , connection->to_write + connection->written
+                         , connection->to_write_len - connection->written
+                         );
     if(sent < 0) goto error;
     if(sent == 0) return;
 
@@ -355,14 +366,14 @@ static void on_writable(struct ev_loop *loop, ev_io *watcher, int revents)
 
   ebb_connection_reset_timeout(connection);
 
-  buf->written += sent;
+  connection->written += sent;
 
-  if(buf->written == buf->len) {
+  if(connection->written == connection->to_write_len) {
     ev_io_stop(loop, watcher);
     connection->to_write = NULL;
 
-    if(buf->on_release)
-      buf->on_release(buf);
+    if(connection->after_write_cb)
+      connection->after_write_cb(connection);
   }
   return;
 error:
@@ -412,7 +423,8 @@ on_goodbye(struct ev_loop *loop, ev_timer *watcher, int revents)
 }
 
 
-static ebb_request* new_request_wrapper(void *data)
+static ebb_request* 
+new_request_wrapper(void *data)
 {
   ebb_connection *connection = data;
   if(connection->new_request)
@@ -423,7 +435,8 @@ static ebb_request* new_request_wrapper(void *data)
 /* Internal callback 
  * Called by server->connection_watcher.
  */
-static void on_connection(struct ev_loop *loop, ev_io *watcher, int revents)
+static void 
+on_connection(struct ev_loop *loop, ev_io *watcher, int revents)
 {
   ebb_server *server = watcher->data;
 
@@ -512,7 +525,8 @@ static void on_connection(struct ev_loop *loop, ev_io *watcher, int revents)
  * Begin the server listening on a file descriptor.  This DOES NOT start the
  * event loop.  Start the event loop after making this call.
  */
-int ebb_server_listen_on_fd(ebb_server *server, const int fd)
+int 
+ebb_server_listen_on_fd(ebb_server *server, const int fd)
 {
   assert(server->listening == FALSE);
 
@@ -537,7 +551,8 @@ int ebb_server_listen_on_fd(ebb_server *server, const int fd)
  * Begin the server listening on a file descriptor This DOES NOT start the
  * event loop. Start the event loop after making this call.
  */
-int ebb_server_listen_on_port(ebb_server *server, const int port)
+int 
+ebb_server_listen_on_port(ebb_server *server, const int port)
 {
   int fd = -1;
   struct linger ling = {0, 0};
@@ -587,7 +602,8 @@ error:
  * Stops the server. Will not accept new connections.  Does not drop
  * existing connections.
  */
-void ebb_server_unlisten(ebb_server *server)
+void 
+ebb_server_unlisten(ebb_server *server)
 {
   if(server->listening) {
     ev_io_stop(server->loop, &server->connection_watcher);
@@ -606,7 +622,8 @@ void ebb_server_unlisten(ebb_server *server)
  * @param server the server to initialize
  * @param loop a libev loop
  */
-void ebb_server_init(ebb_server *server, struct ev_loop *loop)
+void 
+ebb_server_init(ebb_server *server, struct ev_loop *loop)
 {
   server->loop = loop;
   server->listening = FALSE;
@@ -641,7 +658,8 @@ void ebb_server_init(ebb_server *server, struct ev_loop *loop)
  * key_file: the filename of a private key. Currently only PKCS-1 encoded
  * RSA and DSA private keys are accepted. 
  */
-int ebb_server_set_secure (ebb_server *server, const char *cert_file, const char *key_file)
+int 
+ebb_server_set_secure (ebb_server *server, const char *cert_file, const char *key_file)
 {
   server->secure = TRUE;
   gnutls_global_init();
@@ -680,7 +698,8 @@ int ebb_server_set_secure (ebb_server *server, const char *cert_file, const char
  * @param connection the connection to initialize
  * @param timeout    the timeout in seconds
  */
-void ebb_connection_init(ebb_connection *connection)
+void 
+ebb_connection_init(ebb_connection *connection)
 {
   connection->fd = -1;
   connection->server = NULL;
@@ -721,7 +740,8 @@ void ebb_connection_init(ebb_connection *connection)
   connection->data = NULL;
 }
 
-void ebb_connection_schedule_close (ebb_connection *connection)
+void 
+ebb_connection_schedule_close (ebb_connection *connection)
 {
 #ifdef HAVE_GNUTLS
   if(connection->server->secure) {
@@ -736,7 +756,8 @@ void ebb_connection_schedule_close (ebb_connection *connection)
 /* 
  * Resets the timeout to stay alive for another connection->timeout seconds
  */
-void ebb_connection_reset_timeout(ebb_connection *connection)
+void 
+ebb_connection_reset_timeout(ebb_connection *connection)
 {
   ev_timer_again(connection->server->loop, &connection->timeout_watcher);
 }
@@ -751,14 +772,16 @@ void ebb_connection_reset_timeout(ebb_connection *connection)
  * while the connection is writing another buffer the ebb_connection_write
  * will return FALSE and ignore the request.
  */
-int ebb_connection_write(ebb_connection *connection, ebb_buf *buf)
+int 
+ebb_connection_write (ebb_connection *connection, const char *buf, size_t len, ebb_after_write_cb cb)
 {
   if(ev_is_active(&connection->write_watcher))
     return FALSE;
   assert(!CONNECTION_HAS_SOMETHING_TO_WRITE);
-  assert(buf->len > 0);
-  buf->written = 0;
   connection->to_write = buf;
+  connection->to_write_len = len;
+  connection->written = 0;
+  connection->after_write_cb = cb;
   ev_io_start(connection->server->loop, &connection->write_watcher);
   return TRUE;
 }
