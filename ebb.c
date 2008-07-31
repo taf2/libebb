@@ -302,8 +302,8 @@ static void on_readable(struct ev_loop *loop, ev_io *watcher, int revents)
   /* parse error? just drop the client. screw the 400 response */
   if(ebb_request_parser_has_error(&connection->parser)) goto error;
 
-  if(buf && buf->free)
-    buf->free(buf);
+  if(buf && buf->on_release)
+    buf->on_release(buf);
 
   return;
 error:
@@ -361,8 +361,8 @@ static void on_writable(struct ev_loop *loop, ev_io *watcher, int revents)
     ev_io_stop(loop, watcher);
     connection->to_write = NULL;
 
-    if(buf->free)
-      buf->free(buf);
+    if(buf->on_release)
+      buf->on_release(buf);
   }
   return;
 error:
@@ -745,7 +745,7 @@ void ebb_connection_reset_timeout(ebb_connection *connection)
  * Writes a string to the socket. This is actually sets a watcher
  * which may take multiple iterations to write the entire string.
  *
- * The buf->free() callback will be made when the operation is complete.
+ * The buf->on_release() callback will be made when the operation is complete.
  *
  * This can only be called once at a time. If you call it again
  * while the connection is writing another buffer the ebb_connection_write

@@ -37,7 +37,7 @@ struct ebb_buf {
   /* public */
   char *base;
   size_t len;
-  void (*free)(ebb_buf*);
+  void (*on_release)(ebb_buf*);
   void *data;
 };
 

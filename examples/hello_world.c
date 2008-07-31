@@ -40,7 +40,7 @@ static void request_complete(ebb_request *request)
   struct hello_connection *connection_data = connection->data;
   connection_data->response.base = MSG;
   connection_data->response.len = sizeof MSG; 
-  connection_data->response.free = continue_responding;
+  connection_data->response.on_release = continue_responding;
   connection_data->response.data = connection;
 
   if(ebb_request_should_keep_alive(request))
