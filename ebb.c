@@ -46,6 +46,29 @@ static ssize_t nosigpipe_push(void *data, const void *buf, size_t len)
   return send(fd, buf, len, MSG_NOSIGNAL);
 }
 
+static void 
+close_connection(ebb_connection *connection)
+{
+#ifdef HAVE_GNUTLS
+  if(connection->server->secure)
+    ev_io_stop(connection->server->loop, &connection->handshake_watcher);
+#endif
+  ev_io_stop(connection->server->loop, &connection->read_watcher);
+  ev_io_stop(connection->server->loop, &connection->write_watcher);
+  ev_timer_stop(connection->server->loop, &connection->timeout_watcher);
+
+  if(0 > close(connection->fd))
+    error(0, 0, "problem closing connection fd");
+
+  connection->open = FALSE;
+
+  if(connection->on_close)
+    connection->on_close(connection);
+  /* No access to the connection past this point! 
+   * The user is allowed to free in the callback
+   */
+}
+
 #ifdef HAVE_GNUTLS
 #define GNUTLS_NEED_WRITE (gnutls_record_get_direction(connection->session) == 1)
 #define GNUTLS_NEED_READ (gnutls_record_get_direction(connection->session) == 0)
@@ -148,29 +171,6 @@ session_cache_remove (void *data, gnutls_datum_t key)
   //printf("session_cache_remove\n");
 
   return 0;
-}
-
-static void 
-close_connection(ebb_connection *connection)
-{
-#ifdef HAVE_GNUTLS
-  if(connection->server->secure)
-    ev_io_stop(connection->server->loop, &connection->handshake_watcher);
-#endif
-  ev_io_stop(connection->server->loop, &connection->read_watcher);
-  ev_io_stop(connection->server->loop, &connection->write_watcher);
-  ev_timer_stop(connection->server->loop, &connection->timeout_watcher);
-
-  if(0 > close(connection->fd))
-    error(0, 0, "problem closing connection fd");
-
-  connection->open = FALSE;
-
-  if(connection->on_close)
-    connection->on_close(connection);
-  /* No access to the connection past this point! 
-   * The user is allowed to free in the callback
-   */
 }
 
 static void 
@@ -345,7 +345,7 @@ static void on_writable(struct ev_loop *loop, ev_io *watcher, int revents)
   } else {
 #endif /* HAVE_GNUTLS */
 
-    sent = nosigpipe_push(connection, buf->base + buf->written, buf->len - buf->written);
+    sent = nosigpipe_push((void*)connection->fd, buf->base + buf->written, buf->len - buf->written);
     if(sent < 0) goto error;
     if(sent == 0) return;
 

@@ -8,7 +8,7 @@
 #define EBB_H
 
 /* remove this if you want to embed libebb without GNUTLS */
-#define HAVE_GNUTLS 1
+//#define HAVE_GNUTLS 1
 
 #include <sys/socket.h>
 #include <netinet/in.h>

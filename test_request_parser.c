@@ -417,14 +417,14 @@ ebb_request* new_request ()
   ebb_request *r = &requests[num_requests].request;
   ebb_request_init(r);
 
-  r->request_complete = request_complete;
-  r->header_field = header_field_cb;
-  r->header_value = header_value_cb;
-  r->request_path = request_path_cb;
-  r->request_uri = request_uri_cb;
-  r->fragment = fragment_cb;
-  r->query_string = query_string_cb;
-  r->body_handler = body_handler;
+  r->on_complete = request_complete;
+  r->on_header_field = header_field_cb;
+  r->on_header_value = header_value_cb;
+  r->on_path = request_path_cb;
+  r->on_uri = request_uri_cb;
+  r->on_fragment = fragment_cb;
+  r->on_query_string = query_string_cb;
+  r->on_body = body_handler;
 
   r->data = &requests[num_requests];
  // printf("new request %d\n", num_requests);

@@ -90,7 +90,7 @@ int main()
   ebb_server server;
 
   ebb_server_init(&server, loop);
-  ebb_server_set_secure(&server, "examples/ca-cert.pem", "examples/ca-key.pem");
+  //ebb_server_set_secure(&server, "examples/ca-cert.pem", "examples/ca-key.pem");
   server.new_connection = new_connection;
 
   printf("hello_world listening on port 5000\n");

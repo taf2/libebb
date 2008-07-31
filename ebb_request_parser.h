@@ -53,16 +53,16 @@ struct ebb_request {
   char multipart_boundary[EBB_MAX_MULTIPART_BOUNDARY_LEN]; /* ro */
   unsigned int multipart_boundary_len; /* ro */
 
-  /* Public */
-  ebb_element_cb request_path;
-  ebb_element_cb query_string;
-  ebb_element_cb request_uri;
-  ebb_element_cb fragment;
-  ebb_header_cb header_field;
-  ebb_header_cb header_value;
-  void (*headers_complete)(ebb_request *);
-  ebb_element_cb body_handler;
-  void (*request_complete)(ebb_request *);
+  /* Public  - ordered list of callbacks */
+  ebb_element_cb on_path;
+  ebb_element_cb on_query_string;
+  ebb_element_cb on_uri;
+  ebb_element_cb on_fragment;
+  ebb_header_cb  on_header_field;
+  ebb_header_cb  on_header_value;
+  void (*on_headers_complete)(ebb_request *);
+  ebb_element_cb on_body;
+  void (*on_complete)(ebb_request *);
   void *data;
 };
 
@@ -76,8 +76,8 @@ struct ebb_request_parser {
   const char *header_field_mark; 
   const char *header_value_mark; 
   const char *query_string_mark; 
-  const char *request_path_mark; 
-  const char *request_uri_mark; 
+  const char *path_mark; 
+  const char *uri_mark; 
   const char *fragment_mark; 
 
   /* Public */

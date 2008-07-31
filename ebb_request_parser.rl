@@ -21,24 +21,24 @@
 #define CONTENT_LENGTH (parser->current_request->content_length)
 
 #define LEN(FROM) (p - parser->FROM##_mark)
-#define CALLBACK(FOR)                          \
-  if(parser->FOR##_mark && CURRENT->FOR) {     \
-    CURRENT->FOR( CURRENT                      \
-                , parser->FOR##_mark           \
-                , p - parser->FOR##_mark       \
-                );                             \
+#define CALLBACK(FOR)                               \
+  if(parser->FOR##_mark && CURRENT->on_##FOR) {     \
+    CURRENT->on_##FOR( CURRENT                      \
+                , parser->FOR##_mark                \
+                , p - parser->FOR##_mark            \
+                );                                  \
  }
-#define HEADER_CALLBACK(FOR)                   \
-  if(parser->FOR##_mark && CURRENT->FOR) {     \
-    CURRENT->FOR( CURRENT                      \
-                , parser->FOR##_mark           \
-                , p - parser->FOR##_mark       \
-                , CURRENT->number_of_headers   \
-                );                             \
+#define HEADER_CALLBACK(FOR)                        \
+  if(parser->FOR##_mark && CURRENT->on_##FOR) {     \
+    CURRENT->on_##FOR( CURRENT                      \
+                , parser->FOR##_mark                \
+                , p - parser->FOR##_mark            \
+                , CURRENT->number_of_headers        \
+                );                                  \
  }
-#define END_REQUEST                            \
-    if(CURRENT->request_complete)              \
-      CURRENT->request_complete(CURRENT);      \
+#define END_REQUEST                       \
+    if(CURRENT->on_complete)              \
+      CURRENT->on_complete(CURRENT);      \
     CURRENT = NULL;
 
 %%{
@@ -48,8 +48,8 @@
   action mark_header_value   { parser->header_value_mark   = p; }
   action mark_fragment       { parser->fragment_mark       = p; }
   action mark_query_string   { parser->query_string_mark   = p; }
-  action mark_request_path   { parser->request_path_mark   = p; }
-  action mark_request_uri    { parser->request_uri_mark    = p; }
+  action mark_request_path   { parser->path_mark           = p; }
+  action mark_request_uri    { parser->uri_mark            = p; }
 
   action method_copy         { CURRENT->method = EBB_COPY;      }
   action method_delete       { CURRENT->method = EBB_DELETE;    }
@@ -80,8 +80,8 @@
 
   action request_uri { 
     //printf("request uri\n");
-    CALLBACK(request_uri);
-    parser->request_uri_mark = NULL;
+    CALLBACK(uri);
+    parser->uri_mark = NULL;
   }
 
   action fragment { 
@@ -98,8 +98,8 @@
 
   action request_path {
     //printf("request path\n");
-    CALLBACK(request_path);
-    parser->request_path_mark = NULL;
+    CALLBACK(path);
+    parser->path_mark = NULL;
   }
 
   action content_length {
@@ -146,8 +146,8 @@
   }
 
   action end_headers {
-    if(CURRENT->headers_complete)
-      CURRENT->headers_complete(CURRENT);
+    if(CURRENT->on_headers_complete)
+      CURRENT->on_headers_complete(CURRENT);
   }
 
   action add_to_chunk_size {
@@ -169,12 +169,12 @@
     //printf("chunk_size: %d\n", parser->chunk_size);
     if(parser->chunk_size > REMAINING) {
       parser->eating = TRUE;
-      CURRENT->body_handler(CURRENT, p, REMAINING);
+      CURRENT->on_body(CURRENT, p, REMAINING);
       parser->chunk_size -= REMAINING;
       fhold; 
       fbreak;
     } else {
-      CURRENT->body_handler(CURRENT, p, parser->chunk_size);
+      CURRENT->on_body(CURRENT, p, parser->chunk_size);
       p += parser->chunk_size;
       parser->chunk_size = 0;
       parser->eating = FALSE;
@@ -216,8 +216,8 @@
          *
          */
         p += 1;
-        if( CURRENT->body_handler )
-          CURRENT->body_handler(CURRENT, p, CURRENT->content_length); 
+        if( CURRENT->on_body )
+          CURRENT->on_body(CURRENT, p, CURRENT->content_length); 
 
         p += CURRENT->content_length;
         CURRENT->body_read = CURRENT->content_length;
@@ -240,8 +240,8 @@
         p += 1;
         size_t eat = REMAINING;
 
-        if( CURRENT->body_handler && eat > 0)
-          CURRENT->body_handler(CURRENT, p, eat); 
+        if( CURRENT->on_body && eat > 0)
+          CURRENT->on_body(CURRENT, p, eat); 
 
         p += eat;
         CURRENT->body_read += eat;
@@ -385,8 +385,8 @@ void ebb_request_parser_init(ebb_request_parser *parser)
   parser->current_request = NULL;
 
   parser->header_field_mark = parser->header_value_mark   = 
-  parser->query_string_mark = parser->request_path_mark   = 
-  parser->request_uri_mark  = parser->fragment_mark       = NULL;
+  parser->query_string_mark = parser->path_mark           = 
+  parser->uri_mark          = parser->fragment_mark       = NULL;
 
   parser->new_request = NULL;
 }
@@ -418,7 +418,7 @@ size_t ebb_request_parser_execute(ebb_request_parser *parser, const char *buffer
     if(eat == parser->chunk_size) {
       parser->eating = FALSE;
     }
-    CURRENT->body_handler(CURRENT, p, eat);
+    CURRENT->on_body(CURRENT, p, eat);
     p += eat;
     parser->chunk_size -= eat;
     //printf("eat: %d\n", eat);
@@ -431,7 +431,7 @@ size_t ebb_request_parser_execute(ebb_request_parser *parser, const char *buffer
     //printf("eat normal body (before parse)\n");
     size_t eat = MIN(len, CURRENT->content_length - CURRENT->body_read);
 
-    CURRENT->body_handler(CURRENT, p, eat);
+    CURRENT->on_body(CURRENT, p, eat);
     p += eat;
     CURRENT->body_read += eat;
 
@@ -444,8 +444,8 @@ size_t ebb_request_parser_execute(ebb_request_parser *parser, const char *buffer
   if(parser->header_value_mark)   parser->header_value_mark   = buffer;
   if(parser->fragment_mark)       parser->fragment_mark       = buffer;
   if(parser->query_string_mark)   parser->query_string_mark   = buffer;
-  if(parser->request_path_mark)   parser->request_path_mark   = buffer;
-  if(parser->request_uri_mark)    parser->request_uri_mark    = buffer;
+  if(parser->path_mark)           parser->path_mark           = buffer;
+  if(parser->uri_mark)            parser->uri_mark            = buffer;
 
   %% write exec;
 
@@ -457,8 +457,8 @@ size_t ebb_request_parser_execute(ebb_request_parser *parser, const char *buffer
   HEADER_CALLBACK(header_value);
   CALLBACK(fragment);
   CALLBACK(query_string);
-  CALLBACK(request_path);
-  CALLBACK(request_uri);
+  CALLBACK(path);
+  CALLBACK(uri);
 
   assert(p <= pe && "buffer overflow after parsing execute");
 
@@ -488,15 +488,15 @@ void ebb_request_init(ebb_request *request)
   request->multipart_boundary_len = 0;
   request->keep_alive = -1;
 
-  request->request_complete = NULL;
-  request->headers_complete = NULL;
-  request->body_handler = NULL;
-  request->header_field = NULL;
-  request->header_value = NULL;
-  request->request_uri = NULL;
-  request->fragment = NULL;
-  request->request_path = NULL;
-  request->query_string = NULL;
+  request->on_complete = NULL;
+  request->on_headers_complete = NULL;
+  request->on_body = NULL;
+  request->on_header_field = NULL;
+  request->on_header_value = NULL;
+  request->on_uri = NULL;
+  request->on_fragment = NULL;
+  request->on_path = NULL;
+  request->on_query_string = NULL;
 }
 
 int ebb_request_should_keep_alive(ebb_request *request)
