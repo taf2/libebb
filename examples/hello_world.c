@@ -44,9 +44,9 @@ static void request_complete(ebb_request *request)
   connection_data->response.data = connection;
 
   if(ebb_request_should_keep_alive(request))
-    connection_data->responses_to_write = 1;
-  else
     connection_data->responses_to_write++;
+  else
+    connection_data->responses_to_write = 1;
 
   ebb_connection_write(connection, &connection_data->response);
   free(request);
@@ -58,7 +58,7 @@ static ebb_request* new_request(ebb_connection *connection)
   ebb_request *request = malloc(sizeof(ebb_request));
   ebb_request_init(request);
   request->data = connection;
-  request->request_complete = request_complete;
+  request->on_complete = request_complete;
   return request;
 }
 
