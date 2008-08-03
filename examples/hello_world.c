@@ -5,7 +5,7 @@
 #include <assert.h>
 
 #include <ev.h>
-#include <ebb.h>
+#include "ebb.h"
 
 #define MSG ("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 12\r\n\r\nhello world\n")
 static int c = 0;

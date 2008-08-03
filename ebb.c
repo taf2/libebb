@@ -14,7 +14,6 @@
 #include <netinet/in.h>  /* inet_ntoa */
 #include <arpa/inet.h>   /* inet_ntoa */
 #include <unistd.h>
-#include <error.h>
 #include <stdio.h>      /* perror */
 #include <errno.h>      /* perror */
 #include <stdlib.h> /* for the default methods */
@@ -27,9 +26,17 @@
 # include "rbtree.h" /* for session_cache */
 #endif
 
-#define TRUE 1
-#define FALSE 0
-#define MIN(a,b) (a < b ? a : b)
+#ifndef TRUE
+# define TRUE 1
+#endif
+#ifndef FALSE
+# define FALSE 0
+#endif 
+#ifndef MIN
+# define MIN(a,b) (a < b ? a : b)
+#endif
+
+#define error(FORMAT, ...) fprintf(stderr, "error: " FORMAT "\n", ##__VA_ARGS__)
 
 #define CONNECTION_HAS_SOMETHING_TO_WRITE (connection->to_write != NULL)
 
@@ -64,7 +71,7 @@ close_connection(ebb_connection *connection)
   ev_timer_stop(connection->server->loop, &connection->timeout_watcher);
 
   if(0 > close(connection->fd))
-    error(0, 0, "problem closing connection fd");
+    error("problem closing connection fd");
 
   connection->open = FALSE;
 
@@ -191,7 +198,7 @@ on_handshake(struct ev_loop *loop ,ev_io *watcher, int revents)
   assert(!ev_is_active(&connection->write_watcher));
 
   if(EV_ERROR & revents) {
-    error(0, 0, "on_handshake() got error event, closing connection.\n");
+    error("on_handshake() got error event, closing connection.n");
     goto error;
   }
 
@@ -265,7 +272,7 @@ on_readable(struct ev_loop *loop, ev_io *watcher, int revents)
   assert(watcher == &connection->read_watcher);
 
   if(EV_ERROR & revents) {
-    error(0, 0, "on_readable() got error event, closing connection.\n");
+    error("on_readable() got error event, closing connection.");
     goto error;
   }
 
@@ -377,7 +384,7 @@ on_writable(struct ev_loop *loop, ev_io *watcher, int revents)
   }
   return;
 error:
-  error(0, 0, "close connection on write.\n");
+  error("close connection on write.");
   ebb_connection_schedule_close(connection);
 }
 
@@ -390,7 +397,7 @@ on_goodbye_tls(struct ev_loop *loop, ev_io *watcher, int revents)
   assert(watcher == &connection->goodbye_tls_watcher);
 
   if(EV_ERROR & revents) {
-    error(0, 0, "on_goodbye() got error event, closing connection.\n");
+    error("on_goodbye() got error event, closing connection.");
     goto die;
   }
 
@@ -447,7 +454,7 @@ on_connection(struct ev_loop *loop, ev_io *watcher, int revents)
   assert(&server->connection_watcher == watcher);
   
   if(EV_ERROR & revents) {
-    error(0, 0, "on_connection() got error event, closing server.\n");
+    error("on_connection() got error event, closing server.");
     ebb_server_unlisten(server);
     return;
   }
@@ -671,7 +678,7 @@ ebb_server_set_secure (ebb_server *server, const char *cert_file, const char *ke
                                               , GNUTLS_X509_FMT_PEM
                                               );
   if(r < 0) {
-    error(0, 0, "error loading certificates");
+    error("loading certificates");
     return -1;
   }
   return 1;
