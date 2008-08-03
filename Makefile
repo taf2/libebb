@@ -76,12 +76,12 @@ DEPS = ebb.h ebb_request_parser.h rbtree.h
 LIBS = -lev
 
 GNUTLS_EXISTS = $(shell pkg-config --silence-errors --exists gnutls || echo "no")
-ifneq (GNUTLS_EXISTS,no)
+ifeq ($(GNUTLS_EXISTS),no)
+	USING_GNUTLS = "no"
+else
 	CFLAGS += $(shell pkg-config --cflags gnutls) -DHAVE_GNUTLS=1
 	LIBS += $(shell pkg-config --libs gnutls)
 	USING_GNUTLS = "yes"
-else
-	USING_GNUTLS = "no"
 endif
 
 SOURCES=ebb.c ebb_request_parser.c rbtree.c
