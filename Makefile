@@ -1,5 +1,9 @@
 #based on the makefiles in rubinius 
 
+# Set this such that $(LIBEVDIR)/lib include libev.so and 
+# $(LIBEVDIR)/include has ev.h
+LIBEVDIR=$(HOME)/local/libev
+
 # Respect the environment
 ifeq ($(CC),)
   CC=gcc
@@ -73,7 +77,7 @@ endif
 
 CFLAGS += -fPIC $(CPPFLAGS)
 DEPS = ebb.h ebb_request_parser.h rbtree.h
-LIBS = -lev
+LIBS = 
 
 GNUTLS_EXISTS = $(shell pkg-config --silence-errors --exists gnutls || echo "no")
 ifeq ($(GNUTLS_EXISTS),no)
@@ -83,6 +87,8 @@ else
 	LIBS += $(shell pkg-config --libs gnutls)
 	USING_GNUTLS = "yes"
 endif
+CFLAGS += -I$(LIBEVDIR)/include
+LIBS += -L$(LIBEVDIR)/lib -lev
 
 SOURCES=ebb.c ebb_request_parser.c rbtree.c
 OBJS=$(SOURCES:.c=.o)
