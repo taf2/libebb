@@ -144,7 +144,7 @@ test_request_parser: test_request_parser.o $(OUTPUT_A)
 examples: examples/hello_world
 
 examples/hello_world: examples/hello_world.o $(OUTPUT_A) 
-	$(CC) -lev -o $@ $< $(OUTPUT_A)
+	$(CC) $(CFLAGS) -lev -o $@ $< $(OUTPUT_A) $(LIBS)
 
 .PHONY: examples
 
